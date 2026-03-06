@@ -7,13 +7,15 @@ It accepts anonymized patient details, evaluates trial criteria from a CSV datas
 
 - Frontend: React, Vite, Tailwind CSS, React Router DOM, Axios
 - Backend: FastAPI, Uvicorn, Pydantic, Pandas
-- Data: CSV-based trial dataset
+- Data: CSV-based trial dataset + SQLite patient auth database
 
 ## Core Features
 
-- Demo login page (`/login`)
-- Landing page with CureNova overview and feature cards (`/`)
-- Trial matching page with patient input form (`/match`)
+- Patient auth page (`/login`) with register/login modes
+- SQLite-backed patient registration and login (`/auth/register`, `/auth/login`)
+- Animated loading state (about 2.5 seconds) on login/register submit
+- Landing page role selector (`Patient` / `Doctor`)
+- Patient must register/login before patient details form is shown
 - Rule-based matching engine for age, disease, stage, biomarker, and optional location reasoning
 - Eligibility statuses:
   - `Eligible`
@@ -58,6 +60,8 @@ trial-matcher/
       index.css
       main.jsx
   backend/
+    auth_db.py
+    curenova.db (auto-created locally)
     main.py
     matcher.py
     models.py
@@ -95,6 +99,34 @@ Request:
   "stage": "III",
   "biomarker": "EGFR+",
   "location": "Mumbai"
+}
+```
+
+### `POST /auth/register`
+
+Request:
+
+```json
+{
+  "full_name": "Asha Mehta",
+  "email": "asha@example.com",
+  "password": "secret123",
+  "age": 48,
+  "disease": "lung cancer",
+  "stage": "III",
+  "biomarker": "EGFR+",
+  "location": "Mumbai"
+}
+```
+
+### `POST /auth/login`
+
+Request:
+
+```json
+{
+  "email": "asha@example.com",
+  "password": "secret123"
 }
 ```
 
@@ -147,12 +179,11 @@ Frontend runs on: `http://127.0.0.1:5173`
 
 ## Demo Flow
 
-1. Open `/login`
-2. Login or click **Continue as Demo**
-3. Navigate to **Match Trials**
-4. Enter anonymized patient details
-5. Click **Find Trials**
-6. Review ranked trial cards with score, status, reasons, and missing fields
+1. Open `/`
+2. Click **Patient**
+3. Register (first-time patient) or Login (returning patient)
+4. Submit patient details form after login
+5. Use remaining trial-matching modules in later phases
 
 ## Notes
 

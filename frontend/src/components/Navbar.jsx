@@ -1,11 +1,32 @@
-import { Link, useLocation } from "react-router-dom";
-
-const navItems = [
-  { label: "Home", to: "/" },
-];
+import { useMemo } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 const Navbar = () => {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+
+  const patientSession = useMemo(() => {
+    try {
+      const stored = localStorage.getItem("curenovaPatientSession");
+      return stored ? JSON.parse(stored) : null;
+    } catch (error) {
+      return null;
+    }
+  }, [pathname]);
+  const doctorSession = useMemo(() => {
+    try {
+      const stored = localStorage.getItem("curenovaDoctorSession");
+      return stored ? JSON.parse(stored) : null;
+    } catch (error) {
+      return null;
+    }
+  }, [pathname]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("curenovaPatientSession");
+    localStorage.removeItem("curenovaDoctorSession");
+    navigate("/login");
+  };
 
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur">
@@ -15,20 +36,20 @@ const Navbar = () => {
           <span className="text-lg font-semibold tracking-tight text-slate-900">CureNova</span>
         </Link>
         <div className="flex items-center gap-3">
-          {navItems.map((item) => {
-            const isActive = pathname === item.to;
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                  isActive ? "bg-primary/10 text-primary" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+              pathname === "/" ? "bg-primary/10 text-primary" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            Home
+          </button>
+          {(patientSession || doctorSession) && (
+            <button type="button" onClick={handleLogout} className="btn-secondary px-3 py-1.5">
+              Logout
+            </button>
+          )}
         </div>
       </nav>
     </header>
