@@ -1,0 +1,16 @@
+trial_id,title,disease,min_age,max_age,stage,biomarker,location
+T101,EGFR Lung Cancer Study,lung cancer,40,75,III,EGFR+,Mumbai
+T102,PD-L1 Advanced Lung Trial,lung cancer,45,80,IV,PD-L1+,Delhi
+T103,Targeted Breast HER2 Trial,breast cancer,30,65,II,HER2+,Bangalore
+T104,Hormone Positive Breast Study,breast cancer,35,70,III,ER+,Pune
+T105,Immunotherapy for NSCLC,lung cancer,50,78,II,PD-L1+,Mumbai
+T106,Precision Ovarian Trial,ovarian cancer,25,60,III,BRCA+,Delhi
+T107,Colorectal KRAS Inhibitor,colorectal cancer,35,72,IV,KRAS+,Bangalore
+T108,Leukemia FLT3 Response Trial,leukemia,18,55,II,FLT3+,Pune
+T109,Lymphoma B-Cell Therapy,lymphoma,22,68,III,CD20+,Mumbai
+T110,Gastric Cancer Biomarker Study,gastric cancer,40,70,II,HER2+,Delhi
+T111,Advanced Melanoma Immuno Trial,melanoma,21,67,IV,BRAF+,Bangalore
+T112,Early Lung Stage EGFR Trial,lung cancer,30,68,I,EGFR+,Pune
+T113,Breast Triple Positive Study,breast cancer,28,62,II,HER2+,Mumbai
+T114,Head and Neck Precision Trial,head and neck cancer,33,74,III,PD-L1+,Delhi
+T115,Pancreatic KRAS Combination Study,pancreatic cancer,42,76,IV,KRAS+,Bangalore
