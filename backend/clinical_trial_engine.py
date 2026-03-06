@@ -33,6 +33,8 @@ def _to_bool(value) -> bool:
 def evaluate_match(patient: Dict, trial: Dict) -> Dict:
     score = 0
     explanation: List[str] = []
+    detailed_checks: List[Dict] = []
+    rejection_reasons: List[str] = []
 
     trial_min_age = trial.get("min_age")
     trial_max_age = trial.get("max_age")
@@ -52,31 +54,156 @@ def evaluate_match(patient: Dict, trial: Dict) -> Dict:
         if int(trial_min_age) <= age <= int(trial_max_age):
             score += 20
             explanation.append("Age within required range")
+            detailed_checks.append(
+                {
+                    "criterion": "Age",
+                    "passed": True,
+                    "weight": 20,
+                    "contribution": 20,
+                    "reason": f"Within {trial_min_age}-{trial_max_age}",
+                }
+            )
         else:
             explanation.append(f"Age outside required range ({trial_min_age}-{trial_max_age})")
+            rejection_reasons.append("Age outside allowed range")
+            detailed_checks.append(
+                {
+                    "criterion": "Age",
+                    "passed": False,
+                    "weight": 20,
+                    "contribution": 0,
+                    "reason": f"Outside {trial_min_age}-{trial_max_age}",
+                }
+            )
+    else:
+        detailed_checks.append(
+            {
+                "criterion": "Age",
+                "passed": True,
+                "weight": 20,
+                "contribution": 0,
+                "reason": "No strict age criteria in trial",
+            }
+        )
 
     if _normalize(patient.get("disease")) == _normalize(trial.get("disease")):
         score += 30
         explanation.append("Disease matches trial condition")
+        detailed_checks.append(
+            {
+                "criterion": "Disease",
+                "passed": True,
+                "weight": 30,
+                "contribution": 30,
+                "reason": "Disease matches trial condition",
+            }
+        )
     else:
         explanation.append("Disease does not match trial condition")
+        rejection_reasons.append("Disease mismatch")
+        detailed_checks.append(
+            {
+                "criterion": "Disease",
+                "passed": False,
+                "weight": 30,
+                "contribution": 0,
+                "reason": "Disease does not match trial condition",
+            }
+        )
 
     if trial_stage and _normalize(patient.get("disease_stage")) == _normalize(trial_stage):
         score += 20
         explanation.append("Disease stage matches")
+        detailed_checks.append(
+            {
+                "criterion": "Stage",
+                "passed": True,
+                "weight": 20,
+                "contribution": 20,
+                "reason": f"Stage {trial_stage} matches",
+            }
+        )
     elif trial_stage:
         explanation.append(f"Disease stage mismatch (required {trial_stage})")
+        rejection_reasons.append("Stage mismatch")
+        detailed_checks.append(
+            {
+                "criterion": "Stage",
+                "passed": False,
+                "weight": 20,
+                "contribution": 0,
+                "reason": f"Required stage {trial_stage}",
+            }
+        )
+    else:
+        detailed_checks.append(
+            {
+                "criterion": "Stage",
+                "passed": True,
+                "weight": 20,
+                "contribution": 0,
+                "reason": "No stage restriction in trial",
+            }
+        )
 
     trial_biomarker = trial.get("biomarker")
     if trial_biomarker and _normalize(patient.get("biomarker")) == _normalize(trial_biomarker):
         score += 20
         explanation.append(f"Biomarker {trial_biomarker} detected")
+        detailed_checks.append(
+            {
+                "criterion": "Biomarker",
+                "passed": True,
+                "weight": 20,
+                "contribution": 20,
+                "reason": f"{trial_biomarker} detected",
+            }
+        )
     elif trial_biomarker:
         explanation.append(f"Biomarker mismatch (required {trial_biomarker})")
+        rejection_reasons.append("Biomarker mismatch")
+        detailed_checks.append(
+            {
+                "criterion": "Biomarker",
+                "passed": False,
+                "weight": 20,
+                "contribution": 0,
+                "reason": f"Required biomarker {trial_biomarker}",
+            }
+        )
+    else:
+        detailed_checks.append(
+            {
+                "criterion": "Biomarker",
+                "passed": True,
+                "weight": 20,
+                "contribution": 0,
+                "reason": "No biomarker restriction in trial",
+            }
+        )
 
     if _normalize(patient.get("city")) and _normalize(patient.get("city")) == _normalize(trial.get("city")):
         score += 10
         explanation.append("Location matches trial city")
+        detailed_checks.append(
+            {
+                "criterion": "Location",
+                "passed": True,
+                "weight": 10,
+                "contribution": 10,
+                "reason": "City matches trial city",
+            }
+        )
+    else:
+        detailed_checks.append(
+            {
+                "criterion": "Location",
+                "passed": False,
+                "weight": 10,
+                "contribution": 0,
+                "reason": "City mismatch or not provided",
+            }
+        )
 
     exclusions = [_normalize(item) for item in str(trial.get("exclusion_conditions") or "").split(",") if item.strip()]
     exclusion_hits: List[str] = []
@@ -90,8 +217,27 @@ def evaluate_match(patient: Dict, trial: Dict) -> Dict:
     if exclusion_hits:
         score = max(score - 30, 0)
         explanation.append(f"Exclusion condition present: {', '.join(exclusion_hits)}")
+        rejection_reasons.append(f"Exclusion: {', '.join(exclusion_hits)}")
+        detailed_checks.append(
+            {
+                "criterion": "Exclusions",
+                "passed": False,
+                "weight": 0,
+                "contribution": -30,
+                "reason": f"Exclusion condition present: {', '.join(exclusion_hits)}",
+            }
+        )
     else:
         explanation.append("No exclusion conditions present")
+        detailed_checks.append(
+            {
+                "criterion": "Exclusions",
+                "passed": True,
+                "weight": 0,
+                "contribution": 0,
+                "reason": "No exclusion conditions present",
+            }
+        )
 
     status = "Low Match"
     if score >= 80:
@@ -108,6 +254,8 @@ def evaluate_match(patient: Dict, trial: Dict) -> Dict:
         "score": int(score),
         "status": status,
         "explanation": explanation,
+        "detailed_checks": detailed_checks,
+        "rejection_reasons": rejection_reasons,
     }
 
 
@@ -126,3 +274,22 @@ def rank_trials(patient: Dict, trials: List[Dict], filters: Dict) -> List[Dict]:
     results = [item for item in results if int(item.get("score", 0)) >= min_score]
     results.sort(key=lambda item: item.get("score", 0), reverse=True)
     return results
+
+
+def rank_trials_with_rejections(patient: Dict, trials: List[Dict], filters: Dict) -> Tuple[List[Dict], List[Dict]]:
+    all_results = [evaluate_match(patient, trial) for trial in trials]
+    city_filter = _normalize(filters.get("city"))
+    phase_filter = _normalize(filters.get("trial_phase"))
+    min_score = int(filters.get("minimum_score") or 0)
+
+    filtered = all_results
+    if city_filter:
+        filtered = [item for item in filtered if _normalize(item.get("city")) == city_filter]
+    if phase_filter:
+        filtered = [item for item in filtered if _normalize(item.get("phase")) == phase_filter]
+
+    recommendations = [item for item in filtered if int(item.get("score", 0)) >= min_score]
+    rejections = [item for item in filtered if int(item.get("score", 0)) < min_score]
+    recommendations.sort(key=lambda item: item.get("score", 0), reverse=True)
+    rejections.sort(key=lambda item: item.get("score", 0), reverse=True)
+    return recommendations, rejections

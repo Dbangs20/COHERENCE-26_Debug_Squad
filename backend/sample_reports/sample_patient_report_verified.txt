@@ -1,0 +1,41 @@
+ANONYMIZED PATIENT CLINICAL REPORT
+
+Patient Reference ID: P-1700000000000
+Age: 55
+Gender: Female
+City: Mumbai
+
+Primary Diagnosis:
+- Lung cancer
+- Stage: III
+- Biomarker: EGFR+
+
+Required Tests and Findings:
+1. CBC
+   - Hemoglobin: 12.4 g/dL
+   - WBC: 7,900 /uL
+   - Platelets: 2.5 lakh /uL
+
+2. EGFR Mutation Test
+   - Result: Positive (EGFR+)
+
+3. PET-CT
+   - Finding: Right upper lobe lesion consistent with Stage III disease.
+
+Current Medications:
+- Gefitinib 250 mg once daily
+
+Comorbidities:
+- Diabetes: No
+- Hypertension: Yes
+- Heart Disease: No
+- Kidney Disease: No
+
+Smoking Status:
+- Former smoker
+
+Pregnancy Status:
+- Not pregnant
+
+Summary:
+Patient has lung cancer Stage III with EGFR+ biomarker and has completed required tests (CBC, EGFR Mutation Test, PET-CT). Findings are consistent with trial pre-screening criteria.

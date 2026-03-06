@@ -63,3 +63,123 @@ export const getDoctorMatchedPatients = async (email, minimumScore = 50) => {
   });
   return response.data;
 };
+
+export const parseEligibilityCriteria = async (criteriaText) => {
+  const response = await axios.post(`${API_BASE_URL}/parse_criteria`, {
+    criteria_text: criteriaText,
+  });
+  return response.data;
+};
+
+export const qaEligibilityCriteria = async (criteriaText) => {
+  const response = await axios.post(`${API_BASE_URL}/criteria/qa`, {
+    criteria_text: criteriaText,
+  });
+  return response.data;
+};
+
+export const requestPatientReport = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/doctor/request_report`, payload);
+  return response.data;
+};
+
+export const getPatientReportRequests = async (email) => {
+  const response = await axios.get(`${API_BASE_URL}/patient/report_requests`, { params: { email } });
+  return response.data;
+};
+
+export const uploadPatientReport = async ({ requestId, patientEmail, file }) => {
+  const formData = new FormData();
+  formData.append("request_id", requestId);
+  formData.append("patient_email", patientEmail);
+  formData.append("file", file);
+  const response = await axios.post(`${API_BASE_URL}/patient/upload_report`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return response.data;
+};
+
+export const getDoctorReports = async (email) => {
+  const response = await axios.get(`${API_BASE_URL}/doctor/reports`, { params: { email } });
+  return response.data;
+};
+
+export const analyzeDoctorReport = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/doctor/analyze_report`, payload);
+  return response.data;
+};
+
+export const getNotifications = async (email, role) => {
+  const response = await axios.get(`${API_BASE_URL}/notifications`, { params: { email, role } });
+  return response.data;
+};
+
+export const markNotificationRead = async (notificationId) => {
+  const response = await axios.post(`${API_BASE_URL}/notifications/mark_read`, { notification_id: notificationId });
+  return response.data;
+};
+
+export const deleteReadNotifications = async (email, role) => {
+  const response = await axios.post(`${API_BASE_URL}/notifications/delete_read`, { email, role });
+  return response.data;
+};
+
+export const getPatientAppointmentOptions = async (email) => {
+  const response = await axios.get(`${API_BASE_URL}/patient/appointment_options`, { params: { email } });
+  return response.data;
+};
+
+export const bookAppointment = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/appointments/book`, payload);
+  return response.data;
+};
+
+export const getPatientAppointments = async (email) => {
+  const response = await axios.get(`${API_BASE_URL}/patient/appointments`, { params: { email } });
+  return response.data;
+};
+
+export const getDoctorAppointments = async (email) => {
+  const response = await axios.get(`${API_BASE_URL}/doctor/appointments`, { params: { email } });
+  return response.data;
+};
+
+export const addDoctorAppointmentAdvice = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/doctor/appointments/advice`, payload);
+  return response.data;
+};
+
+export const applyToTrial = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/trial/apply`, payload);
+  return response.data;
+};
+
+export const getFairnessSnapshot = async () => {
+  const response = await axios.get(`${API_BASE_URL}/analytics/fairness`);
+  return response.data;
+};
+
+export const createDoctorSlot = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/doctor/slots`, payload);
+  return response.data;
+};
+
+export const getDoctorSlots = async (email) => {
+  const response = await axios.get(`${API_BASE_URL}/doctor/slots`, { params: { email } });
+  return response.data;
+};
+
+export const getPrivacyLogs = async (limit = 20) => {
+  const response = await axios.get(`${API_BASE_URL}/privacy/logs`, { params: { limit } });
+  return response.data;
+};
+
+export const getDemoMetrics = async () => {
+  const response = await axios.get(`${API_BASE_URL}/demo/metrics`);
+  return response.data;
+};
+
+export const runDemoScenario = async () => {
+  const response = await axios.post(`${API_BASE_URL}/demo/run`);
+  return response.data;
+};
