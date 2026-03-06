@@ -3,6 +3,7 @@ import Footer from "./components/Footer";
 import Navbar from "./components/Navbar";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
+import MatchTrials from "./pages/MatchTrials";
 
 const App = () => {
   const { pathname } = useLocation();
@@ -15,6 +16,7 @@ const App = () => {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/match" element={<MatchTrials />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </main>

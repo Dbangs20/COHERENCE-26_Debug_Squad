@@ -2,7 +2,7 @@ import hashlib
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 DB_PATH = Path(__file__).resolve().parent / "curenova.db"
 
@@ -41,6 +41,53 @@ def init_db() -> None:
                 password_hash TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 last_login_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS patient_conditions (
+                patient_id TEXT PRIMARY KEY,
+                patient_email TEXT NOT NULL,
+                age INTEGER NOT NULL,
+                gender TEXT NOT NULL,
+                disease TEXT NOT NULL,
+                disease_stage TEXT,
+                biomarker TEXT,
+                city TEXT,
+                diabetes INTEGER DEFAULT 0,
+                hypertension INTEGER DEFAULT 0,
+                heart_disease INTEGER DEFAULT 0,
+                kidney_disease INTEGER DEFAULT 0,
+                current_medications TEXT,
+                smoking_status TEXT,
+                pregnancy_status TEXT,
+                lab_results TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS clinical_trials (
+                trial_id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                disease TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                min_age INTEGER,
+                max_age INTEGER,
+                stage TEXT,
+                biomarker TEXT,
+                exclusion_conditions TEXT,
+                criteria_text TEXT,
+                city TEXT,
+                hospital TEXT,
+                country TEXT,
+                start_date TEXT,
+                end_date TEXT,
+                max_participants INTEGER,
+                doctor_email TEXT,
+                created_at TEXT NOT NULL
             )
             """
         )
@@ -154,3 +201,110 @@ def verify_doctor(email: str, password: str) -> Optional[sqlite3.Row]:
         row = conn.execute("SELECT * FROM doctors WHERE id = ?", (doctor["id"],)).fetchone()
 
     return row
+
+
+def create_patient_condition(payload: Dict) -> sqlite3.Row:
+    timestamp = datetime.utcnow().isoformat()
+    patient_id = f"P-{int(datetime.utcnow().timestamp() * 1000)}"
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO patient_conditions (
+                patient_id, patient_email, age, gender, disease, disease_stage, biomarker, city,
+                diabetes, hypertension, heart_disease, kidney_disease,
+                current_medications, smoking_status, pregnancy_status, lab_results, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                payload["patient_email"].lower().strip(),
+                payload["age"],
+                payload["gender"].strip(),
+                payload["disease"].strip(),
+                payload.get("disease_stage"),
+                payload.get("biomarker"),
+                payload.get("city"),
+                1 if payload.get("diabetes") else 0,
+                1 if payload.get("hypertension") else 0,
+                1 if payload.get("heart_disease") else 0,
+                1 if payload.get("kidney_disease") else 0,
+                payload.get("current_medications"),
+                payload.get("smoking_status"),
+                payload.get("pregnancy_status"),
+                payload.get("lab_results"),
+                timestamp,
+            ),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM patient_conditions WHERE patient_id = ?", (patient_id,)).fetchone()
+    return row
+
+
+def list_patient_conditions(patient_email: str) -> List[sqlite3.Row]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM patient_conditions WHERE patient_email = ? ORDER BY created_at DESC",
+            (patient_email.lower().strip(),),
+        ).fetchall()
+    return rows
+
+
+def list_all_patient_conditions() -> List[sqlite3.Row]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM patient_conditions ORDER BY created_at DESC").fetchall()
+    return rows
+
+
+def get_patient_condition(patient_id: str) -> Optional[sqlite3.Row]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM patient_conditions WHERE patient_id = ?", (patient_id,)).fetchone()
+    return row
+
+
+def create_clinical_trial(payload: Dict) -> sqlite3.Row:
+    timestamp = datetime.utcnow().isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO clinical_trials (
+                trial_id, title, disease, phase, min_age, max_age, stage, biomarker, exclusion_conditions,
+                criteria_text, city, hospital, country, start_date, end_date, max_participants, doctor_email, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload["trial_id"].strip(),
+                payload["title"].strip(),
+                payload["disease"].strip(),
+                payload["phase"].strip(),
+                payload.get("min_age"),
+                payload.get("max_age"),
+                payload.get("stage"),
+                payload.get("biomarker"),
+                payload.get("exclusion_conditions"),
+                payload.get("criteria_text"),
+                payload.get("city"),
+                payload.get("hospital"),
+                payload.get("country"),
+                payload.get("start_date"),
+                payload.get("end_date"),
+                payload.get("max_participants"),
+                payload.get("doctor_email"),
+                timestamp,
+            ),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM clinical_trials WHERE trial_id = ?", (payload["trial_id"].strip(),)).fetchone()
+    return row
+
+
+def list_clinical_trials(doctor_email: Optional[str] = None) -> List[sqlite3.Row]:
+    with get_connection() as conn:
+        if doctor_email:
+            rows = conn.execute(
+                "SELECT * FROM clinical_trials WHERE doctor_email = ? ORDER BY created_at DESC",
+                (doctor_email.lower().strip(),),
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM clinical_trials ORDER BY created_at DESC").fetchall()
+    return rows

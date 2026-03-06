@@ -1,16 +1,16 @@
-trial_id,title,disease,min_age,max_age,stage,biomarker,location
-T101,EGFR Lung Cancer Study,lung cancer,40,75,III,EGFR+,Mumbai
-T102,PD-L1 Advanced Lung Trial,lung cancer,45,80,IV,PD-L1+,Delhi
-T103,Targeted Breast HER2 Trial,breast cancer,30,65,II,HER2+,Bangalore
-T104,Hormone Positive Breast Study,breast cancer,35,70,III,ER+,Pune
-T105,Immunotherapy for NSCLC,lung cancer,50,78,II,PD-L1+,Mumbai
-T106,Precision Ovarian Trial,ovarian cancer,25,60,III,BRCA+,Delhi
-T107,Colorectal KRAS Inhibitor,colorectal cancer,35,72,IV,KRAS+,Bangalore
-T108,Leukemia FLT3 Response Trial,leukemia,18,55,II,FLT3+,Pune
-T109,Lymphoma B-Cell Therapy,lymphoma,22,68,III,CD20+,Mumbai
-T110,Gastric Cancer Biomarker Study,gastric cancer,40,70,II,HER2+,Delhi
-T111,Advanced Melanoma Immuno Trial,melanoma,21,67,IV,BRAF+,Bangalore
-T112,Early Lung Stage EGFR Trial,lung cancer,30,68,I,EGFR+,Pune
-T113,Breast Triple Positive Study,breast cancer,28,62,II,HER2+,Mumbai
-T114,Head and Neck Precision Trial,head and neck cancer,33,74,III,PD-L1+,Delhi
-T115,Pancreatic KRAS Combination Study,pancreatic cancer,42,76,IV,KRAS+,Bangalore
+trial_id,title,disease,min_age,max_age,stage,biomarker,location,inclusion_criteria,exclusion_criteria
+T101,EGFR Lung Cancer Study,lung cancer,40,75,III,EGFR+,Mumbai,Adults 40-75 with stage III lung cancer and EGFR+ biomarker,Prior EGFR inhibitor failure or severe renal impairment
+T102,PD-L1 Advanced Lung Trial,lung cancer,45,80,IV,PD-L1+,Delhi,Adults 45-80 stage IV lung cancer with PD-L1 positive report,Active autoimmune disease or uncontrolled infection
+T103,Targeted Breast HER2 Trial,breast cancer,30,65,II,HER2+,Bangalore,Female adults 30-65 with stage II breast cancer and HER2 positivity,Pregnancy or previous HER2 targeted toxicity grade 4
+T104,Hormone Positive Breast Study,breast cancer,35,70,III,ER+,Pune,Adults 35-70 stage III breast cancer ER positive profile,Severe cardiac dysfunction or metastatic brain lesions
+T105,Immunotherapy for NSCLC,lung cancer,50,78,II,PD-L1+,Mumbai,Adults 50-78 with stage II NSCLC and PD-L1 positive marker,Current immunosuppressive therapy or transplant history
+T106,Precision Ovarian Trial,ovarian cancer,25,60,III,BRCA+,Delhi,Women 25-60 with stage III ovarian cancer and BRCA mutation evidence,Prior PARP resistance or uncontrolled bleeding disorder
+T107,Colorectal KRAS Inhibitor,colorectal cancer,35,72,IV,KRAS+,Bangalore,Adults 35-72 stage IV colorectal cancer with KRAS mutation,Recent major surgery within 30 days
+T108,Leukemia FLT3 Response Trial,leukemia,18,55,II,FLT3+,Pune,Adults 18-55 with stage II leukemia and FLT3 positive genomic panel,Active CNS leukemia or severe hepatic impairment
+T109,Lymphoma B-Cell Therapy,lymphoma,22,68,III,CD20+,Mumbai,Adults 22-68 with stage III lymphoma and CD20 biomarker positivity,Prior CAR-T within 6 months
+T110,Gastric Cancer Biomarker Study,gastric cancer,40,70,II,HER2+,Delhi,Adults 40-70 with stage II gastric cancer and HER2 positivity,Gastrointestinal perforation history
+T111,Advanced Melanoma Immuno Trial,melanoma,21,67,IV,BRAF+,Bangalore,Adults 21-67 stage IV melanoma with BRAF mutation confirmed,Untreated symptomatic brain metastases
+T112,Early Lung Stage EGFR Trial,lung cancer,30,68,I,EGFR+,Pune,Adults 30-68 with stage I lung cancer and EGFR positive profile,Interstitial lung disease or oxygen dependency
+T113,Breast Triple Positive Study,breast cancer,28,62,II,HER2+,Mumbai,Adults 28-62 with stage II breast cancer and HER2 positive markers,Active hepatitis B or C with high viral load
+T114,Head and Neck Precision Trial,head and neck cancer,33,74,III,PD-L1+,Delhi,Adults 33-74 stage III head and neck cancer PD-L1 positive,Recent radiotherapy within 2 weeks
+T115,Pancreatic KRAS Combination Study,pancreatic cancer,42,76,IV,KRAS+,Bangalore,Adults 42-76 stage IV pancreatic cancer with KRAS mutation,ECOG performance status greater than 2

@@ -1,191 +1,133 @@
-# CureNova
+# CureNova - AI Clinical Trial Eligibility & Matching Engine
 
-CureNova is a full-stack hackathon prototype for AI-assisted clinical trial eligibility and matching.
-It accepts anonymized patient details, evaluates trial criteria from a CSV dataset, and returns ranked recommendations with explainable reasoning, status labels, and missing-data alerts.
+CureNova is a full-stack healthcare prototype with role-based dashboards for patients and doctors.
+The system stores anonymized patient medical records, allows doctors to register clinical trials, and matches patients to trials using explainable rule-based eligibility logic.
 
 ## Tech Stack
 
 - Frontend: React, Vite, Tailwind CSS, React Router DOM, Axios
-- Backend: FastAPI, Uvicorn, Pydantic, Pandas
-- Data: CSV-based trial dataset + SQLite patient auth database
+- Backend: FastAPI, SQLite, Pydantic, Pandas, scikit-learn
 
-## Core Features
+## Core Functionalities Implemented
 
-- Patient auth page (`/login`) with register/login modes
-- SQLite-backed patient registration and login (`/auth/register`, `/auth/login`)
-- Animated loading state (about 2.5 seconds) on login/register submit
-- Landing page role selector (`Patient` / `Doctor`)
-- Patient must register/login before patient details form is shown
-- Rule-based matching engine for age, disease, stage, biomarker, and optional location reasoning
-- Eligibility statuses:
-  - `Eligible`
-  - `Partially Eligible`
-  - `Insufficient Data`
-  - `Not Eligible`
-- Missing-data detection for critical fields (`stage`, `biomarker`)
-- Ranked trial result cards with:
-  - trial metadata
-  - score
-  - confidence
-  - status badge
-  - reason list
-  - missing data list
-- Geographic preference awareness through optional patient location
+### 1) Role-based authentication
+- Patient register/login
+- Doctor register/login
+- SQLite persistence
 
-## Folder Structure
+### 2) Patient medical record form (anonymized)
+Stored fields:
+- `patient_id` (auto-generated)
+- `age`, `gender`, `disease`, `disease_stage`, `biomarker`, `city`
+- medical history flags: `diabetes`, `hypertension`, `heart_disease`, `kidney_disease`
+- `current_medications`, `smoking_status`, `pregnancy_status`, `lab_results`
 
-```text
-trial-matcher/
-  frontend/
-    index.html
-    package.json
-    vite.config.js
-    postcss.config.js
-    tailwind.config.js
-    src/
-      components/
-        FeatureCard.jsx
-        Footer.jsx
-        LoadingSpinner.jsx
-        Navbar.jsx
-        PatientForm.jsx
-        StatusBadge.jsx
-        TrialCard.jsx
-      pages/
-        Landing.jsx
-        Login.jsx
-        MatchTrials.jsx
-      api.js
-      App.jsx
-      index.css
-      main.jsx
-  backend/
-    auth_db.py
-    curenova.db (auto-created locally)
-    main.py
-    matcher.py
-    models.py
-    trials.csv
-    requirements.txt
-  README.md
-```
+### 3) Doctor clinical trial registration
+Doctors can register trials with:
+- `trial_id`, `title`, `disease`, `phase`
+- inclusion logic inputs (`min_age`, `max_age`, `stage`, `biomarker`)
+- exclusion conditions (`diabetes`, `heart_disease`, `pregnancy`)
+- location (`hospital`, `city`, `country`)
+- duration (`start_date`, `end_date`)
+- `max_participants`, `criteria_text`
 
-## Matching Logic (Prototype)
+### 4) Clinical trial database table
+`clinical_trials` table created in SQLite with required columns:
+- `trial_id`, `title`, `disease`, `phase`, `min_age`, `max_age`, `stage`, `biomarker`, `exclusion_conditions`, `criteria_text`, `city`, `hospital`, `start_date`, `end_date`, `max_participants`
 
-Scoring weights:
+### 5) Matching engine (`POST /match_trials`)
+Input:
+- `patient_id`
+- optional filters: `city`, `disease`, `trial_phase`, `minimum_score`
 
-- Age match: `25`
-- Disease match: `30`
-- Stage match: `20`
-- Biomarker match: `25`
+Scoring:
+- Age match: +20
+- Disease match: +30
+- Stage match: +20
+- Biomarker match: +20
+- Location match: +10
+- Exclusion conflicts reduce score and are explained
 
-Status rules:
+Statuses:
+- `score >= 80` -> `Strong Match`
+- `score >= 50` -> `Moderate Match`
+- `score < 50` -> `Low Match`
 
-- Score `>= 75` and no critical missing fields -> `Eligible`
-- Score `>= 50` and no critical missing fields -> `Partially Eligible`
-- Missing critical fields (`stage` or `biomarker`) -> `Insufficient Data`
-- Otherwise -> `Not Eligible`
+### 6) Explainable output
+Each recommendation includes:
+- `trial_id`, `title`, `hospital`, `city`
+- `score`, `status`
+- `explanation[]`
 
-## API
+### 7) Patient dashboard updates
+- Save/view patient medical records
+- Fill form again for new condition
+- Start matching for any saved `patient_id`
+- Recommended Clinical Trials cards with:
+  - title, hospital, city, score, status badge
+  - `View Explanation`
+  - `Apply for Trial`
 
-### `POST /match`
+### 8) Filter options
+Patient-side matching filters:
+- city
+- disease
+- trial phase
+- minimum score
 
-Request:
+## API Endpoints
 
-```json
-{
-  "age": 55,
-  "disease": "lung cancer",
-  "stage": "III",
-  "biomarker": "EGFR+",
-  "location": "Mumbai"
-}
-```
+Auth:
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/doctor/register`
+- `POST /auth/doctor/login`
 
-### `POST /auth/register`
+Patient records:
+- `POST /patient/conditions`
+- `GET /patient/conditions?email=...`
 
-Request:
+Doctor trials:
+- `POST /doctor/clinical_trials`
+- `GET /doctor/clinical_trials?email=...`
 
-```json
-{
-  "full_name": "Asha Mehta",
-  "email": "asha@example.com",
-  "password": "secret123",
-  "age": 48,
-  "disease": "lung cancer",
-  "stage": "III",
-  "biomarker": "EGFR+",
-  "location": "Mumbai"
-}
-```
+Matching:
+- `POST /match_trials`
 
-### `POST /auth/login`
+Legacy/extended engine endpoints retained:
+- `POST /match`
+- `GET /criteria/parse`
 
-Request:
+## Local Setup
 
-```json
-{
-  "email": "asha@example.com",
-  "password": "secret123"
-}
-```
-
-Response:
-
-```json
-{
-  "recommended_trials": [
-    {
-      "trial_id": "T101",
-      "title": "EGFR Lung Cancer Study",
-      "location": "Mumbai",
-      "score": 100,
-      "confidence": 100,
-      "status": "Eligible",
-      "reasons": [
-        "Age matches allowed trial range",
-        "Disease matches trial condition",
-        "Stage matches trial criteria",
-        "Biomarker matches trial criteria",
-        "Location preference matches"
-      ],
-      "missing_data": []
-    }
-  ]
-}
-```
-
-## Setup Instructions
-
-### 1) Backend
-
+### Backend
 ```bash
 cd backend
 pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-Backend runs on: `http://127.0.0.1:8000`
-
-### 2) Frontend
-
+### Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Frontend runs on: `http://127.0.0.1:5173`
+## End-to-End Testing Guide
 
-## Demo Flow
-
-1. Open `/`
-2. Click **Patient**
-3. Register (first-time patient) or Login (returning patient)
-4. Submit patient details form after login
-5. Use remaining trial-matching modules in later phases
+1. Open app: `http://127.0.0.1:5173`
+2. Register/login as doctor.
+3. Fill **Clinical Trial Registration** and save at least 1 trial.
+4. Register/login as patient.
+5. Fill **Anonymized Patient Condition Form** and save.
+6. In patient records list, click **Start Matching**.
+7. Verify **Recommended Clinical Trials** cards appear.
+8. Check each card has score + status + explanation.
+9. Use filters (`city`, `disease`, `trial phase`, `min score`) and run matching again.
+10. Click **Apply for Trial** and verify the button state changes.
 
 ## Notes
 
-- This project is for hackathon/demo use and not a production medical decision system.
-- Use anonymized patient data only.
+- Prototype for hackathon/demo use.
+- Uses anonymized records and does not include real clinical decision support validation.

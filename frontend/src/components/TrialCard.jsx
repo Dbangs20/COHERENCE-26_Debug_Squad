@@ -10,8 +10,9 @@ const TrialCard = ({ trial }) => {
           <p className="mt-1 text-sm text-slate-600">Location: {trial.location}</p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-slate-500">Match Score</p>
+          <p className="text-xs text-slate-500">Overall Score</p>
           <p className="text-xl font-bold text-primary">{trial.score}</p>
+          <p className="mt-1 text-xs text-slate-500">Rule: {trial.rule_score} | ML: {trial.ml_score}</p>
           <p className="mt-1 text-xs text-slate-500">Confidence: {trial.confidence}%</p>
           <div className="mt-2">
             <StatusBadge status={trial.status} />
@@ -39,6 +40,16 @@ const TrialCard = ({ trial }) => {
               ))}
             </ul>
           )}
+        </div>
+        <div>
+          <h4 className="text-sm font-semibold text-slate-800">Parsed Eligibility Logic</h4>
+          <ul className="mt-2 space-y-1 text-sm text-slate-600">
+            {Object.entries(trial.criteria_logic || {}).map(([key, value]) => (
+              <li key={`${trial.trial_id}-${key}`}>
+                - <span className="font-medium">{key.replaceAll("_", " ")}:</span> {value}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </article>
