@@ -180,6 +180,7 @@ const Landing = () => {
   const [privacyLogs, setPrivacyLogs] = useState([]);
   const [doctorMessage, setDoctorMessage] = useState("");
   const [doctorError, setDoctorError] = useState("");
+  const [doctorToast, setDoctorToast] = useState({ show: false, message: "", type: "info" });
 
   const [requestingReportKey, setRequestingReportKey] = useState("");
   const [requiredTestsByMatchKey, setRequiredTestsByMatchKey] = useState({});
@@ -427,6 +428,14 @@ const Landing = () => {
     if ((patientAppointments || []).length > 0) return 2 * 60 * 60;
     return 0;
   }, [effectiveFollowupItems, patientAppointments, followupClockTick]);
+
+  useEffect(() => {
+    if (!doctorToast.show) return;
+    const timer = setTimeout(() => {
+      setDoctorToast((prev) => ({ ...prev, show: false }));
+    }, 3200);
+    return () => clearTimeout(timer);
+  }, [doctorToast.show]);
 
   const matchedPatientsByTrial = useMemo(() => {
     const grouped = {};
@@ -1010,7 +1019,16 @@ const Landing = () => {
       setDoctorMessage(`Report request sent to ${matchItem.patient_id}. Patient has been notified.`);
       setRequiredTestsByMatchKey((prev) => ({ ...prev, [key]: "" }));
     } catch (error) {
-      setDoctorError(error?.response?.data?.detail || "Unable to request report from patient.");
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail || "Unable to request report from patient.";
+      setDoctorError(detail);
+      if (status === 409) {
+        setDoctorToast({
+          show: true,
+          type: "warning",
+          message: "Duplicate prevented: an active doctor request already exists for this patient and trial.",
+        });
+      }
     } finally {
       setRequestingReportKey("");
     }
@@ -1635,6 +1653,11 @@ const Landing = () => {
   if (doctorSession) {
     return (
       <div className="space-y-6 pb-8">
+        {doctorToast.show && (
+          <div className="fixed right-5 top-20 z-50 max-w-md rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 shadow-soft">
+            {doctorToast.message}
+          </div>
+        )}
         <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-blue-600 to-cyan-500 p-7 text-white shadow-soft sm:p-10">
           <p className="text-xs font-semibold uppercase tracking-wider text-white/90">Doctor Dashboard</p>
           <h1 className="mt-2 text-3xl font-bold">Welcome, Dr. {doctorSession.full_name}</h1>
