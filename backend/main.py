@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,12 +13,15 @@ from auth_db import (
     create_doctor,
     create_doctor_slot,
     create_notification,
+    create_followup_request,
+    create_message,
     create_patient,
     create_patient_condition,
     create_patient_report,
     create_privacy_log,
     create_report_request,
     create_trial_enrollment,
+    create_or_get_research_referral,
     deactivate_doctor_slot,
     delete_read_notifications,
     find_doctor_by_email,
@@ -26,6 +30,8 @@ from auth_db import (
     get_patient_condition,
     get_patient_report,
     get_report_request,
+    get_research_referral,
+    get_status_medicine_template,
     get_trial_by_id,
     init_db,
     list_all_patient_conditions,
@@ -33,18 +39,27 @@ from auth_db import (
     list_appointments_for_patient,
     list_clinical_trials,
     list_doctor_slots,
+    list_followup_requests_for_doctor,
+    list_messages_for_appointment,
     list_notifications,
     list_patient_conditions,
     list_privacy_logs,
     list_report_requests_for_patient,
+    list_research_referrals_for_doctor,
     list_selected_reports_for_patient,
+    list_patient_medicine_plans,
     list_upcoming_available_slots,
     list_verified_reports_for_doctor,
     mark_notification_read,
     slot_has_appointment,
+    complete_appointment,
+    update_appointment_status,
     update_appointment_advice,
     update_patient_report_analysis,
     update_report_request_status,
+    update_research_recommendation,
+    mark_research_referral_shared,
+    upsert_status_medicine_template,
     verify_doctor,
     verify_patient,
 )
@@ -56,6 +71,8 @@ from models import (
     AppointmentAdviceResponse,
     AppointmentBookInput,
     AppointmentBookResponse,
+    AppointmentCompleteInput,
+    AppointmentCompleteResponse,
     AppointmentListResponse,
     AppointmentOptionsResponse,
     AuthResponse,
@@ -78,6 +95,9 @@ from models import (
     MatchResponse,
     MatchTrialsInput,
     MatchTrialsResponse,
+    MessageListResponse,
+    MessageSendInput,
+    MessageSendResponse,
     NotificationListResponse,
     NotificationDeleteReadInput,
     NotificationDeleteReadResponse,
@@ -94,8 +114,19 @@ from models import (
     PrivacyLogResponse,
     ReportRequestCreateInput,
     ReportRequestResponse,
+    FollowUpRequestInput,
+    FollowUpRequestResponse,
+    FollowUpStatusResponse,
     TrialApplyInput,
     TrialApplyResponse,
+    ResearchReferralCreateInput,
+    ResearchReferralCreateResponse,
+    ResearchReferralRecommendInput,
+    ResearchRecommendationResponse,
+    ResearchReferralItem,
+    ResearchReferralListResponse,
+    ResearchShareToPatientInput,
+    PatientMedicinePlanListResponse,
 )
 
 app = FastAPI(title="CureNova API", version="1.0.0")
@@ -242,6 +273,50 @@ def _row_to_appointment(row):
         "doctor_advice": row["doctor_advice"],
         "status": row["status"],
         "doctor_name": row["doctor_name"] if "doctor_name" in row.keys() else None,
+        "appointment_completed_at": row["appointment_completed_at"] if "appointment_completed_at" in row.keys() else None,
+        "followup_available_at": row["followup_available_at"] if "followup_available_at" in row.keys() else None,
+    }
+
+
+def _row_to_message(row):
+    return {
+        "id": row["id"],
+        "appointment_id": row["appointment_id"],
+        "patient_id": row["patient_id"],
+        "patient_email": row["patient_email"],
+        "doctor_email": row["doctor_email"],
+        "sender_role": row["sender_role"],
+        "message_text": row["message_text"],
+        "timestamp": row["timestamp"],
+    }
+
+
+def _parse_iso_datetime(value: str):
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _get_followup_status_item(row):
+    now = datetime.now(timezone.utc)
+    followup_dt = _parse_iso_datetime(row["followup_available_at"]) if row["followup_available_at"] else None
+    enabled = bool(followup_dt and now >= followup_dt)
+    remaining = int((followup_dt - now).total_seconds()) if followup_dt and not enabled else 0
+    if remaining < 0:
+        remaining = 0
+    return {
+        "appointment_id": row["id"],
+        "patient_id": row["patient_id"],
+        "doctor_email": row["doctor_email"],
+        "trial_id": row["trial_id"],
+        "status": row["status"],
+        "appointment_completed_at": row["appointment_completed_at"],
+        "followup_available_at": row["followup_available_at"],
+        "followup_enabled": enabled,
+        "seconds_remaining": remaining,
     }
 
 
@@ -263,6 +338,57 @@ def _row_to_privacy_log(row):
         "entity_id": row["entity_id"],
         "findings": row["findings"],
         "created_at": row["created_at"],
+    }
+
+
+def _derive_status_bucket(report_text: str, summary: str) -> str:
+    text = f"{report_text or ''} {summary or ''}".lower()
+    if any(token in text for token in ["critical", "severe", "high risk", "rapid progression", "unstable"]):
+        return "High Risk"
+    if any(token in text for token in ["improving", "responding", "stable", "controlled", "regression"]):
+        return "Stable Response"
+    return "Needs Monitoring"
+
+
+def _build_anonymized_case_id(report_row) -> str:
+    raw = f"{report_row['id']}|{report_row['patient_id']}|{report_row['trial_id']}"
+    token = re.sub(r"[^a-zA-Z0-9]", "", raw)
+    return f"RC-{token[-10:]}" if len(token) >= 10 else f"RC-{token}"
+
+
+def _row_to_research_referral(row) -> dict:
+    return {
+        "id": row["id"],
+        "report_id": row["report_id"],
+        "trial_id": row["trial_id"],
+        "disease": row["disease"],
+        "status_bucket": row["status_bucket"],
+        "anonymized_case_id": row["anonymized_case_id"],
+        "report_snapshot": row["report_snapshot"],
+        "recommendation_status": row["recommendation_status"],
+        "medicine_plan": row["medicine_plan"],
+        "researcher_notes": row["researcher_notes"],
+        "researcher_name": row["researcher_name"],
+        "template_applied": bool(row["template_applied"]),
+        "shared_to_patient": bool(row["shared_to_patient"]),
+        "created_at": row["created_at"],
+        "recommended_at": row["recommended_at"],
+        "shared_at": row["shared_at"],
+    }
+
+
+def _row_to_patient_medicine_plan(row) -> dict:
+    return {
+        "referral_id": row["id"],
+        "anonymized_case_id": row["anonymized_case_id"],
+        "trial_id": row["trial_id"],
+        "disease": row["disease"],
+        "status_bucket": row["status_bucket"],
+        "medicine_plan": row["medicine_plan"],
+        "researcher_notes": row["researcher_notes"],
+        "researcher_name": row["researcher_name"],
+        "doctor_email": row["doctor_email"],
+        "shared_at": row["shared_at"],
     }
 
 
@@ -545,6 +671,11 @@ def doctor_matched_patients(email: str, minimum_score: int = 50):
     best_by_patient = {}
     for patient in patients:
         for trial in trials:
+            patient_disease = str(patient.get("disease", "")).strip().lower()
+            trial_disease = str(trial.get("disease", "")).strip().lower()
+            # Keep doctor-side shortlist disease-specific per trial.
+            if trial_disease and patient_disease != trial_disease:
+                continue
             result = evaluate_match(patient, trial)
             if result["score"] < minimum_score:
                 continue
@@ -702,6 +833,145 @@ def doctor_analyze_report(payload: DoctorAnalyzeReportInput):
     }
 
 
+@app.post("/doctor/research/referrals", response_model=ResearchReferralCreateResponse)
+def doctor_create_research_referral(payload: ResearchReferralCreateInput):
+    report = get_patient_report(payload.report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    if report["doctor_email"].lower().strip() != payload.doctor_email.lower().strip():
+        raise HTTPException(status_code=403, detail="You are not authorized to forward this report.")
+    if report["analysis_status"] != "completed":
+        raise HTTPException(status_code=400, detail="Analyze the report first before forwarding to researcher.")
+
+    patient_condition = get_patient_condition(report["patient_id"])
+    disease = (patient_condition["disease"] if patient_condition else "unknown").strip().lower()
+    status_bucket = _derive_status_bucket(report["report_text"] or "", report["redacted_summary"] or "")
+    template = get_status_medicine_template(disease, status_bucket) if disease and disease != "unknown" else None
+
+    recommendation_status = "pending"
+    medicine_plan = None
+    researcher_notes = None
+    researcher_name = None
+    template_applied = False
+    recommended_at = None
+    if template:
+        recommendation_status = "recommended"
+        medicine_plan = template["medicine_plan"]
+        researcher_notes = template["researcher_notes"] or "Auto-filled from prior researcher guidance."
+        researcher_name = template["last_researcher_name"] or "Researcher Template"
+        template_applied = True
+        recommended_at = datetime.now(timezone.utc).isoformat()
+
+    row = create_or_get_research_referral(
+        {
+            "doctor_email": payload.doctor_email,
+            "report_id": payload.report_id,
+            "trial_id": report["trial_id"],
+            "disease": disease,
+            "status_bucket": status_bucket,
+            "anonymized_case_id": _build_anonymized_case_id(report),
+            "report_snapshot": (report["redacted_summary"] or "")[:1200],
+            "recommendation_status": recommendation_status,
+            "medicine_plan": medicine_plan,
+            "researcher_notes": researcher_notes,
+            "researcher_name": researcher_name,
+            "template_applied": template_applied,
+            "recommended_at": recommended_at,
+        }
+    )
+
+    message = "Anonymized case forwarded to researcher queue."
+    if template_applied:
+        message = "Anonymized case forwarded. Existing researcher template auto-applied for this status."
+    create_notification(
+        {
+            "recipient_email": payload.doctor_email,
+            "recipient_role": "doctor",
+            "title": "Research Relay Updated",
+            "message": f"{message} Case: {_row_to_research_referral(row)['anonymized_case_id']}.",
+        }
+    )
+    return {"success": True, "referral": _row_to_research_referral(row), "message": message}
+
+
+@app.get("/doctor/research/referrals", response_model=ResearchReferralListResponse)
+def doctor_research_referrals(email: str):
+    rows = list_research_referrals_for_doctor(email)
+    return {"referrals": [_row_to_research_referral(row) for row in rows]}
+
+
+@app.post("/doctor/research/recommend", response_model=ResearchRecommendationResponse)
+def doctor_save_research_recommendation(payload: ResearchReferralRecommendInput):
+    referral = get_research_referral(payload.referral_id)
+    if not referral:
+        raise HTTPException(status_code=404, detail="Referral not found.")
+    if referral["doctor_email"].lower().strip() != payload.doctor_email.lower().strip():
+        raise HTTPException(status_code=403, detail="You are not authorized for this referral.")
+
+    updated = update_research_recommendation(
+        payload.referral_id,
+        payload.medicine_plan,
+        payload.researcher_notes,
+        payload.researcher_name,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Unable to save recommendation.")
+
+    disease = (updated["disease"] or "").strip()
+    if disease:
+        upsert_status_medicine_template(
+            disease,
+            updated["status_bucket"],
+            payload.medicine_plan,
+            payload.researcher_notes,
+            payload.researcher_name,
+        )
+    return {
+        "success": True,
+        "referral": _row_to_research_referral(updated),
+        "message": "Researcher recommendation saved and status-based template updated.",
+    }
+
+
+@app.post("/doctor/research/share_to_patient", response_model=ResearchRecommendationResponse)
+def doctor_share_research_plan(payload: ResearchShareToPatientInput):
+    referral = get_research_referral(payload.referral_id)
+    if not referral:
+        raise HTTPException(status_code=404, detail="Referral not found.")
+    if referral["doctor_email"].lower().strip() != payload.doctor_email.lower().strip():
+        raise HTTPException(status_code=403, detail="You are not authorized for this referral.")
+    if referral["recommendation_status"] != "recommended" or not referral["medicine_plan"]:
+        raise HTTPException(status_code=400, detail="Save a researcher recommendation before sharing with patient.")
+
+    report = get_patient_report(referral["report_id"])
+    if not report:
+        raise HTTPException(status_code=404, detail="Linked patient report not found.")
+
+    updated = mark_research_referral_shared(referral["id"])
+    create_notification(
+        {
+            "recipient_email": report["patient_email"],
+            "recipient_role": "patient",
+            "title": "Personalized Medicine Plan Shared",
+            "message": (
+                f"Doctor has shared a personalized plan for trial {referral['trial_id']} "
+                f"(status: {referral['status_bucket']}): {referral['medicine_plan']}"
+            ),
+        }
+    )
+    return {
+        "success": True,
+        "referral": _row_to_research_referral(updated),
+        "message": "Medicine plan shared with patient via doctor channel.",
+    }
+
+
+@app.get("/patient/medicine_plans", response_model=PatientMedicinePlanListResponse)
+def patient_medicine_plans(email: str):
+    rows = list_patient_medicine_plans(email)
+    return {"plans": [_row_to_patient_medicine_plan(row) for row in rows]}
+
+
 @app.get("/notifications", response_model=NotificationListResponse)
 def notifications(email: str, role: str):
     rows = list_notifications(email, role)
@@ -822,6 +1092,156 @@ def doctor_appointments_advice(payload: AppointmentAdviceInput):
         }
     )
     return {"success": True}
+
+
+@app.post("/doctor/appointments/complete", response_model=AppointmentCompleteResponse)
+def doctor_appointments_complete(payload: AppointmentCompleteInput):
+    appointment = get_appointment(payload.appointment_id)
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found.")
+    if appointment["doctor_email"].lower().strip() != payload.doctor_email.lower().strip():
+        raise HTTPException(status_code=403, detail="You are not authorized to complete this appointment.")
+
+    completed_at = datetime.now(timezone.utc)
+    followup_at = completed_at + timedelta(hours=2)
+    updated = complete_appointment(
+        payload.appointment_id,
+        payload.doctor_email,
+        completed_at.isoformat(),
+        followup_at.isoformat(),
+    )
+    create_notification(
+        {
+            "recipient_email": appointment["patient_email"],
+            "recipient_role": "patient",
+            "title": "Appointment Completed",
+            "message": "Your consultation is completed. Follow-up options will unlock in 2 hours.",
+        }
+    )
+    create_notification(
+        {
+            "recipient_email": payload.doctor_email,
+            "recipient_role": "doctor",
+            "title": "Appointment Marked Completed",
+            "message": f"Appointment #{payload.appointment_id} is marked completed. Follow-up unlocks in 2 hours.",
+        }
+    )
+    return {
+        "success": True,
+        "appointment_id": payload.appointment_id,
+        "status": "completed",
+        "appointment_completed_at": updated["appointment_completed_at"],
+        "followup_available_at": updated["followup_available_at"],
+        "message": "Appointment completed. Follow-up will be available after 2 hours.",
+    }
+
+
+@app.get("/patient/followup_status", response_model=FollowUpStatusResponse)
+def patient_followup_status(email: str):
+    rows = list_appointments_for_patient(email)
+    items = [_get_followup_status_item(row) for row in rows if row["status"] in {"completed", "followup_requested"}]
+    return {
+        "items": items,
+        "safety_notice": "If you experience severe symptoms, please seek emergency medical assistance immediately.",
+    }
+
+
+@app.post("/followup/request", response_model=FollowUpRequestResponse)
+def followup_request(payload: FollowUpRequestInput):
+    appointment = get_appointment(payload.appointment_id)
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found.")
+    if appointment["patient_email"].lower().strip() != payload.patient_email.lower().strip():
+        raise HTTPException(status_code=403, detail="You are not authorized to request follow-up for this appointment.")
+
+    followup_dt = _parse_iso_datetime(appointment["followup_available_at"]) if appointment["followup_available_at"] else None
+    if not followup_dt:
+        raise HTTPException(status_code=400, detail="Doctor has not completed this appointment yet.")
+    now = datetime.now(timezone.utc)
+    if now < followup_dt:
+        remaining = int((followup_dt - now).total_seconds())
+        raise HTTPException(status_code=400, detail=f"Follow-up will be available in {remaining} seconds.")
+
+    video_url = None
+    if payload.mode == "video":
+        room = f"cureNovaFollowup-{appointment['id']}-{appointment['patient_id']}"
+        video_url = f"https://meet.jit.si/{room}"
+
+    create_followup_request(
+        appointment["id"],
+        payload.patient_email,
+        appointment["doctor_email"],
+        payload.mode,
+        video_url,
+    )
+    update_appointment_status(appointment["id"], "followup_requested")
+    create_notification(
+        {
+            "recipient_email": appointment["doctor_email"],
+            "recipient_role": "doctor",
+            "title": "New Follow-Up Request",
+            "message": f"Patient {appointment['patient_id']} requested a {payload.mode} follow-up after consultation.",
+        }
+    )
+    create_notification(
+        {
+            "recipient_email": payload.patient_email,
+            "recipient_role": "patient",
+            "title": "Follow-Up Requested",
+            "message": (
+                "Your follow-up request has been sent to the doctor."
+                if payload.mode == "text"
+                else f"Video room created. Join link: {video_url}"
+            ),
+        }
+    )
+    return {
+        "success": True,
+        "mode": payload.mode,
+        "message": "Follow-up request sent successfully.",
+        "video_url": video_url,
+    }
+
+
+@app.get("/doctor/followup_requests")
+def doctor_followup_requests(email: str):
+    rows = list_followup_requests_for_doctor(email)
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "id": row["id"],
+                "appointment_id": row["appointment_id"],
+                "patient_id": row["patient_id"],
+                "patient_email": row["patient_email"],
+                "trial_id": row["trial_id"],
+                "mode": row["mode"],
+                "status": row["status"],
+                "video_url": row["video_url"],
+                "created_at": row["created_at"],
+            }
+        )
+    return {"requests": items}
+
+
+@app.post("/messages/send", response_model=MessageSendResponse)
+def messages_send(payload: MessageSendInput):
+    appointment = get_appointment(payload.appointment_id)
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found.")
+    if appointment["patient_email"].lower().strip() != payload.patient_email.lower().strip():
+        raise HTTPException(status_code=403, detail="Patient email mismatch for appointment.")
+    if appointment["doctor_email"].lower().strip() != payload.doctor_email.lower().strip():
+        raise HTTPException(status_code=403, detail="Doctor email mismatch for appointment.")
+
+    row = create_message(payload.model_dump())
+    return {"success": True, "item": _row_to_message(row)}
+
+
+@app.get("/messages", response_model=MessageListResponse)
+def messages_list(appointment_id: int):
+    rows = list_messages_for_appointment(appointment_id)
+    return {"messages": [_row_to_message(row) for row in rows]}
 
 
 @app.post("/trial/apply", response_model=TrialApplyResponse)

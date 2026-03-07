@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Footer from "./components/Footer";
 import Navbar from "./components/Navbar";
+import HomeLanding from "./pages/HomeLanding";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import MatchTrials from "./pages/MatchTrials";
@@ -12,8 +13,9 @@ const App = () => {
   return (
     <div className="min-h-screen">
       {!isLoginPage && <Navbar />}
-      <main className="mx-auto max-w-7xl px-4 pb-10 pt-6 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-7xl px-4 pb-8 pt-4 sm:px-6 lg:px-8">
         <Routes>
+          <Route path="/home" element={<HomeLanding />} />
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/match" element={<MatchTrials />} />

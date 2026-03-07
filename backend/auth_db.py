@@ -150,7 +150,37 @@ def init_db() -> None:
                 appointment_time TEXT NOT NULL,
                 doctor_advice TEXT,
                 status TEXT NOT NULL DEFAULT 'scheduled',
+                appointment_completed_at TEXT,
+                followup_available_at TEXT,
                 created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS followup_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                appointment_id INTEGER NOT NULL,
+                patient_email TEXT NOT NULL,
+                doctor_email TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'requested',
+                video_url TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                appointment_id INTEGER NOT NULL,
+                patient_id TEXT NOT NULL,
+                patient_email TEXT NOT NULL,
+                doctor_email TEXT NOT NULL,
+                sender_role TEXT NOT NULL,
+                message_text TEXT NOT NULL,
+                timestamp TEXT NOT NULL
             )
             """
         )
@@ -194,10 +224,59 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_referrals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doctor_email TEXT NOT NULL,
+                report_id INTEGER NOT NULL UNIQUE,
+                trial_id TEXT NOT NULL,
+                disease TEXT,
+                status_bucket TEXT NOT NULL,
+                anonymized_case_id TEXT NOT NULL,
+                report_snapshot TEXT,
+                recommendation_status TEXT NOT NULL DEFAULT 'pending',
+                medicine_plan TEXT,
+                researcher_notes TEXT,
+                researcher_name TEXT,
+                template_applied INTEGER NOT NULL DEFAULT 0,
+                shared_to_patient INTEGER NOT NULL DEFAULT 0,
+                shared_at TEXT,
+                created_at TEXT NOT NULL,
+                recommended_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS status_medicine_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                disease TEXT NOT NULL,
+                status_bucket TEXT NOT NULL,
+                medicine_plan TEXT NOT NULL,
+                researcher_notes TEXT,
+                last_researcher_name TEXT,
+                updated_at TEXT NOT NULL,
+                UNIQUE(disease, status_bucket)
+            )
+            """
+        )
         # Lightweight migration support for existing local DBs.
         report_request_columns = [row["name"] for row in conn.execute("PRAGMA table_info(report_requests)").fetchall()]
         if "required_tests" not in report_request_columns:
             conn.execute("ALTER TABLE report_requests ADD COLUMN required_tests TEXT")
+        appointment_columns = [row["name"] for row in conn.execute("PRAGMA table_info(appointments)").fetchall()]
+        if "appointment_completed_at" not in appointment_columns:
+            conn.execute("ALTER TABLE appointments ADD COLUMN appointment_completed_at TEXT")
+        if "followup_available_at" not in appointment_columns:
+            conn.execute("ALTER TABLE appointments ADD COLUMN followup_available_at TEXT")
+        referral_columns = [row["name"] for row in conn.execute("PRAGMA table_info(research_referrals)").fetchall()]
+        if "template_applied" not in referral_columns:
+            conn.execute("ALTER TABLE research_referrals ADD COLUMN template_applied INTEGER NOT NULL DEFAULT 0")
+        if "shared_to_patient" not in referral_columns:
+            conn.execute("ALTER TABLE research_referrals ADD COLUMN shared_to_patient INTEGER NOT NULL DEFAULT 0")
+        if "shared_at" not in referral_columns:
+            conn.execute("ALTER TABLE research_referrals ADD COLUMN shared_at TEXT")
         conn.commit()
 
 
@@ -672,6 +751,93 @@ def update_appointment_advice(appointment_id: int, advice: str) -> None:
         conn.commit()
 
 
+def complete_appointment(appointment_id: int, doctor_email: str, completed_at: str, followup_available_at: str) -> Optional[sqlite3.Row]:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE appointments
+            SET status = 'completed',
+                appointment_completed_at = ?,
+                followup_available_at = ?
+            WHERE id = ? AND doctor_email = ?
+            """,
+            (completed_at, followup_available_at, appointment_id, doctor_email.lower().strip()),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
+    return row
+
+
+def update_appointment_status(appointment_id: int, status: str) -> None:
+    with get_connection() as conn:
+        conn.execute("UPDATE appointments SET status = ? WHERE id = ?", (status, appointment_id))
+        conn.commit()
+
+
+def create_followup_request(appointment_id: int, patient_email: str, doctor_email: str, mode: str, video_url: Optional[str] = None) -> sqlite3.Row:
+    timestamp = datetime.utcnow().isoformat()
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO followup_requests (
+                appointment_id, patient_email, doctor_email, mode, status, video_url, created_at
+            ) VALUES (?, ?, ?, ?, 'requested', ?, ?)
+            """,
+            (appointment_id, patient_email.lower().strip(), doctor_email.lower().strip(), mode, video_url, timestamp),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM followup_requests WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return row
+
+
+def list_followup_requests_for_doctor(doctor_email: str) -> List[sqlite3.Row]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT fr.*, ap.patient_id, ap.patient_email, ap.trial_id
+            FROM followup_requests fr
+            LEFT JOIN appointments ap ON ap.id = fr.appointment_id
+            WHERE fr.doctor_email = ?
+            ORDER BY fr.created_at DESC
+            """,
+            (doctor_email.lower().strip(),),
+        ).fetchall()
+    return rows
+
+
+def create_message(payload: Dict) -> sqlite3.Row:
+    timestamp = datetime.utcnow().isoformat()
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO messages (
+                appointment_id, patient_id, patient_email, doctor_email, sender_role, message_text, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload["appointment_id"],
+                payload["patient_id"],
+                payload["patient_email"].lower().strip(),
+                payload["doctor_email"].lower().strip(),
+                payload["sender_role"],
+                payload["message_text"].strip(),
+                timestamp,
+            ),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM messages WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return row
+
+
+def list_messages_for_appointment(appointment_id: int) -> List[sqlite3.Row]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM messages WHERE appointment_id = ? ORDER BY timestamp ASC",
+            (appointment_id,),
+        ).fetchall()
+    return rows
+
+
 def create_trial_enrollment(trial_id: str, patient_id: str, patient_email: str, status: str) -> Optional[sqlite3.Row]:
     timestamp = datetime.utcnow().isoformat()
     with get_connection() as conn:
@@ -832,5 +998,190 @@ def list_privacy_logs(limit: int = 20) -> List[sqlite3.Row]:
         rows = conn.execute(
             "SELECT * FROM privacy_logs ORDER BY created_at DESC LIMIT ?",
             (limit,),
+        ).fetchall()
+    return rows
+
+
+def get_status_medicine_template(disease: str, status_bucket: str) -> Optional[sqlite3.Row]:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM status_medicine_templates
+            WHERE lower(disease) = ? AND status_bucket = ?
+            """,
+            (disease.lower().strip(), status_bucket.strip()),
+        ).fetchone()
+    return row
+
+
+def upsert_status_medicine_template(
+    disease: str,
+    status_bucket: str,
+    medicine_plan: str,
+    researcher_notes: Optional[str],
+    researcher_name: Optional[str],
+) -> sqlite3.Row:
+    timestamp = datetime.utcnow().isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO status_medicine_templates (
+                disease, status_bucket, medicine_plan, researcher_notes, last_researcher_name, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(disease, status_bucket)
+            DO UPDATE SET
+                medicine_plan = excluded.medicine_plan,
+                researcher_notes = excluded.researcher_notes,
+                last_researcher_name = excluded.last_researcher_name,
+                updated_at = excluded.updated_at
+            """,
+            (
+                disease.lower().strip(),
+                status_bucket.strip(),
+                medicine_plan.strip(),
+                (researcher_notes or "").strip() or None,
+                (researcher_name or "").strip() or None,
+                timestamp,
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT * FROM status_medicine_templates
+            WHERE lower(disease) = ? AND status_bucket = ?
+            """,
+            (disease.lower().strip(), status_bucket.strip()),
+        ).fetchone()
+    return row
+
+
+def create_or_get_research_referral(payload: Dict) -> sqlite3.Row:
+    timestamp = datetime.utcnow().isoformat()
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT * FROM research_referrals WHERE report_id = ?",
+            (payload["report_id"],),
+        ).fetchone()
+        if existing:
+            return existing
+
+        cursor = conn.execute(
+            """
+            INSERT INTO research_referrals (
+                doctor_email, report_id, trial_id, disease, status_bucket, anonymized_case_id,
+                report_snapshot, recommendation_status, medicine_plan, researcher_notes, researcher_name,
+                template_applied, shared_to_patient, shared_at, created_at, recommended_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+            """,
+            (
+                payload["doctor_email"].lower().strip(),
+                payload["report_id"],
+                payload["trial_id"],
+                payload.get("disease"),
+                payload["status_bucket"],
+                payload["anonymized_case_id"],
+                payload.get("report_snapshot"),
+                payload.get("recommendation_status", "pending"),
+                payload.get("medicine_plan"),
+                payload.get("researcher_notes"),
+                payload.get("researcher_name"),
+                1 if payload.get("template_applied") else 0,
+                timestamp,
+                payload.get("recommended_at"),
+            ),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM research_referrals WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return row
+
+
+def list_research_referrals_for_doctor(doctor_email: str) -> List[sqlite3.Row]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT rr.*
+            FROM research_referrals rr
+            WHERE rr.doctor_email = ?
+            ORDER BY rr.created_at DESC
+            """,
+            (doctor_email.lower().strip(),),
+        ).fetchall()
+    return rows
+
+
+def get_research_referral(referral_id: int) -> Optional[sqlite3.Row]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM research_referrals WHERE id = ?", (referral_id,)).fetchone()
+    return row
+
+
+def update_research_recommendation(
+    referral_id: int,
+    medicine_plan: str,
+    researcher_notes: Optional[str],
+    researcher_name: Optional[str],
+) -> Optional[sqlite3.Row]:
+    recommended_at = datetime.utcnow().isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE research_referrals
+            SET recommendation_status = 'recommended',
+                medicine_plan = ?,
+                researcher_notes = ?,
+                researcher_name = ?,
+                recommended_at = ?
+            WHERE id = ?
+            """,
+            (
+                medicine_plan.strip(),
+                (researcher_notes or "").strip() or None,
+                (researcher_name or "").strip() or None,
+                recommended_at,
+                referral_id,
+            ),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM research_referrals WHERE id = ?", (referral_id,)).fetchone()
+    return row
+
+
+def mark_research_referral_shared(referral_id: int) -> Optional[sqlite3.Row]:
+    shared_at = datetime.utcnow().isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE research_referrals
+            SET shared_to_patient = 1, shared_at = ?
+            WHERE id = ?
+            """,
+            (shared_at, referral_id),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM research_referrals WHERE id = ?", (referral_id,)).fetchone()
+    return row
+
+
+def list_patient_medicine_plans(patient_email: str) -> List[sqlite3.Row]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                rr.id,
+                rr.anonymized_case_id,
+                rr.trial_id,
+                rr.disease,
+                rr.status_bucket,
+                rr.medicine_plan,
+                rr.researcher_notes,
+                rr.researcher_name,
+                rr.shared_at,
+                pr.doctor_email
+            FROM research_referrals rr
+            JOIN patient_reports pr ON pr.id = rr.report_id
+            WHERE pr.patient_email = ? AND rr.shared_to_patient = 1
+            ORDER BY rr.shared_at DESC
+            """,
+            (patient_email.lower().strip(),),
         ).fetchall()
     return rows

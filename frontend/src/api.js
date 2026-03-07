@@ -109,6 +109,26 @@ export const analyzeDoctorReport = async (payload) => {
   return response.data;
 };
 
+export const createResearchReferral = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/doctor/research/referrals`, payload);
+  return response.data;
+};
+
+export const getDoctorResearchReferrals = async (email) => {
+  const response = await axios.get(`${API_BASE_URL}/doctor/research/referrals`, { params: { email } });
+  return response.data;
+};
+
+export const saveResearchRecommendation = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/doctor/research/recommend`, payload);
+  return response.data;
+};
+
+export const shareResearchPlanToPatient = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/doctor/research/share_to_patient`, payload);
+  return response.data;
+};
+
 export const getNotifications = async (email, role) => {
   const response = await axios.get(`${API_BASE_URL}/notifications`, { params: { email, role } });
   return response.data;
@@ -139,6 +159,11 @@ export const getPatientAppointments = async (email) => {
   return response.data;
 };
 
+export const getPatientMedicinePlans = async (email) => {
+  const response = await axios.get(`${API_BASE_URL}/patient/medicine_plans`, { params: { email } });
+  return response.data;
+};
+
 export const getDoctorAppointments = async (email) => {
   const response = await axios.get(`${API_BASE_URL}/doctor/appointments`, { params: { email } });
   return response.data;
@@ -146,6 +171,36 @@ export const getDoctorAppointments = async (email) => {
 
 export const addDoctorAppointmentAdvice = async (payload) => {
   const response = await axios.post(`${API_BASE_URL}/doctor/appointments/advice`, payload);
+  return response.data;
+};
+
+export const completeAppointment = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/doctor/appointments/complete`, payload);
+  return response.data;
+};
+
+export const getPatientFollowupStatus = async (email) => {
+  const response = await axios.get(`${API_BASE_URL}/patient/followup_status`, { params: { email } });
+  return response.data;
+};
+
+export const requestFollowup = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/followup/request`, payload);
+  return response.data;
+};
+
+export const getDoctorFollowupRequests = async (email) => {
+  const response = await axios.get(`${API_BASE_URL}/doctor/followup_requests`, { params: { email } });
+  return response.data;
+};
+
+export const sendMessage = async (payload) => {
+  const response = await axios.post(`${API_BASE_URL}/messages/send`, payload);
+  return response.data;
+};
+
+export const getMessages = async (appointmentId) => {
+  const response = await axios.get(`${API_BASE_URL}/messages`, { params: { appointment_id: appointmentId } });
   return response.data;
 };
 

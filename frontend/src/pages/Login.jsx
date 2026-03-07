@@ -104,113 +104,132 @@ const Login = () => {
   };
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl items-center px-4 py-8">
-      <div className="w-full rounded-3xl border border-slate-200 bg-white p-6 shadow-soft sm:p-8">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">CureNova</p>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">{role === "patient" ? "Patient Access" : "Doctor Access"}</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          {role === "patient"
-            ? "New patients register once. Returning patients can login."
-            : "New doctors register once. Returning doctors can login."}
-        </p>
-
-        <div className="mt-6 flex gap-3">
-          <button
-            type="button"
-            className={role === "patient" ? "btn-primary" : "btn-secondary"}
-            onClick={() => setRole("patient")}
-            disabled={isLoading}
-          >
-            Patient
-          </button>
-          <button
-            type="button"
-            className={role === "doctor" ? "btn-primary" : "btn-secondary"}
-            onClick={() => setRole("doctor")}
-            disabled={isLoading}
-          >
-            Doctor
-          </button>
-        </div>
-
-        <div className="mt-3 flex gap-3">
-          <button
-            type="button"
-            className={mode === "login" ? "btn-primary" : "btn-secondary"}
-            onClick={() => setMode("login")}
-            disabled={isLoading}
-          >
-            Login
-          </button>
-          <button
-            type="button"
-            className={mode === "register" ? "btn-primary" : "btn-secondary"}
-            onClick={() => setMode("register")}
-            disabled={isLoading}
-          >
-            Register
-          </button>
-        </div>
-
-        <form className="mt-6 space-y-4" onSubmit={submitAuth}>
-          {mode === "register" && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Full Name *</span>
-                <input type="text" name="fullName" className="input-base" value={registerData.fullName} onChange={handleChange} required />
-              </label>
-              {role === "patient" && (
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium text-slate-700">Age *</span>
-                  <input type="number" min="0" max="130" name="age" className="input-base" value={registerData.age} onChange={handleChange} required />
-                </label>
-              )}
+    <div className="mx-auto flex min-h-screen max-w-5xl items-center px-4 py-8">
+      <div className="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft lg:grid-cols-2">
+        <aside className="auth-visual relative hidden p-8 lg:block">
+          <div className="auth-visual-orb absolute -top-14 -left-10 h-40 w-40 rounded-full" />
+          <div className="auth-visual-orb-alt absolute bottom-0 right-0 h-44 w-44 rounded-full" />
+          <div className="relative z-10">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100">CureNova</p>
+            <h2 className="mt-3 text-3xl font-bold text-white">Secure Access To Clinical Trial Workflows</h2>
+            <p className="mt-3 text-sm leading-7 text-cyan-50">
+              Unified patient and doctor onboarding with anonymized healthcare data safeguards and explainable matching intelligence.
+            </p>
+            <div className="mt-8 space-y-3">
+              <div className="rounded-xl border border-white/30 bg-white/10 p-3 text-sm text-white">🧾 Patient profile-based trial discovery</div>
+              <div className="rounded-xl border border-white/30 bg-white/10 p-3 text-sm text-white">🧠 NLP criteria parsing and structured validation</div>
+              <div className="rounded-xl border border-white/30 bg-white/10 p-3 text-sm text-white">🔒 Privacy-aware report verification pipeline</div>
             </div>
-          )}
+          </div>
+        </aside>
 
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Email *</span>
-            <input
-              type="email"
-              name="email"
-              className="input-base"
-              placeholder="you@example.com"
-              value={mode === "login" ? loginData.email : registerData.email}
-              onChange={handleChange}
-              required
-            />
-          </label>
+        <div className="w-full p-6 sm:p-8">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">CureNova</p>
+          <h1 className="mt-2 text-2xl font-bold text-slate-900">{role === "patient" ? "👤 Patient Access" : "🩺 Doctor Access"}</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            {role === "patient"
+              ? "New patients register once. Returning patients can login."
+              : "New doctors register once. Returning doctors can login."}
+          </p>
 
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Password *</span>
-            <input
-              type="password"
-              name="password"
-              className="input-base"
-              placeholder="••••••••"
-              value={mode === "login" ? loginData.password : registerData.password}
-              onChange={handleChange}
-              required
-            />
-          </label>
+          <div className="mt-6 flex gap-3">
+            <button
+              type="button"
+              className={role === "patient" ? "btn-primary" : "btn-secondary"}
+              onClick={() => setRole("patient")}
+              disabled={isLoading}
+            >
+              👤 Patient
+            </button>
+            <button
+              type="button"
+              className={role === "doctor" ? "btn-primary" : "btn-secondary"}
+              onClick={() => setRole("doctor")}
+              disabled={isLoading}
+            >
+              🩺 Doctor
+            </button>
+          </div>
 
-          {error && <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-          {success && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p>}
+          <div className="mt-3 flex gap-3">
+            <button
+              type="button"
+              className={mode === "login" ? "btn-primary" : "btn-secondary"}
+              onClick={() => setMode("login")}
+              disabled={isLoading}
+            >
+              🔓 Login
+            </button>
+            <button
+              type="button"
+              className={mode === "register" ? "btn-primary" : "btn-secondary"}
+              onClick={() => setMode("register")}
+              disabled={isLoading}
+            >
+              ✍️ Register
+            </button>
+          </div>
 
-          <button type="submit" className="btn-primary w-full disabled:opacity-60" disabled={isLoading}>
-            {isLoading ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Processing...
-              </span>
-            ) : (
-              buttonLabel
+          <form className="mt-6 space-y-4" onSubmit={submitAuth}>
+            {mode === "register" && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-slate-700">🪪 Full Name *</span>
+                  <input type="text" name="fullName" className="input-base" value={registerData.fullName} onChange={handleChange} required />
+                </label>
+                {role === "patient" && (
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium text-slate-700">🎂 Age *</span>
+                    <input type="number" min="0" max="130" name="age" className="input-base" value={registerData.age} onChange={handleChange} required />
+                  </label>
+                )}
+              </div>
             )}
-          </button>
-          <button type="button" className="btn-secondary w-full" onClick={() => navigate("/")} disabled={isLoading}>
-            Back to Home
-          </button>
-        </form>
+
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-slate-700">📧 Email *</span>
+              <input
+                type="email"
+                name="email"
+                className="input-base"
+                placeholder="you@example.com"
+                value={mode === "login" ? loginData.email : registerData.email}
+                onChange={handleChange}
+                required
+              />
+            </label>
+
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-slate-700">🔑 Password *</span>
+              <input
+                type="password"
+                name="password"
+                className="input-base"
+                placeholder="••••••••"
+                value={mode === "login" ? loginData.password : registerData.password}
+                onChange={handleChange}
+                required
+              />
+            </label>
+
+            {error && <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+            {success && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p>}
+
+            <button type="submit" className="btn-primary w-full disabled:opacity-60" disabled={isLoading}>
+              {isLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Processing...
+                </span>
+              ) : (
+                buttonLabel
+              )}
+            </button>
+            <button type="button" className="btn-secondary w-full" onClick={() => navigate("/home")} disabled={isLoading}>
+              ⬅ Back to Home
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

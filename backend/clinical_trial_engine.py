@@ -248,6 +248,7 @@ def evaluate_match(patient: Dict, trial: Dict) -> Dict:
     return {
         "trial_id": trial.get("trial_id"),
         "title": trial.get("title"),
+        "disease": trial.get("disease"),
         "hospital": trial.get("hospital"),
         "city": trial.get("city"),
         "phase": trial.get("phase"),

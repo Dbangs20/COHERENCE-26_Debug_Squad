@@ -184,6 +184,7 @@ class MatchTrialsInput(BaseModel):
 class TrialRecommendation(BaseModel):
     trial_id: str
     title: str
+    disease: Optional[str] = None
     hospital: Optional[str] = None
     city: Optional[str] = None
     phase: Optional[str] = None
@@ -317,6 +318,76 @@ class DoctorReportListResponse(BaseModel):
     reports: List[DoctorReportItem]
 
 
+class ResearchReferralCreateInput(BaseModel):
+    doctor_email: str
+    report_id: int
+
+
+class ResearchReferralRecommendInput(BaseModel):
+    doctor_email: str
+    referral_id: int
+    researcher_name: str
+    medicine_plan: str = Field(..., min_length=3, max_length=2000)
+    researcher_notes: Optional[str] = None
+
+
+class ResearchShareToPatientInput(BaseModel):
+    doctor_email: str
+    referral_id: int
+
+
+class ResearchReferralItem(BaseModel):
+    id: int
+    report_id: int
+    trial_id: str
+    disease: Optional[str] = None
+    status_bucket: str
+    anonymized_case_id: str
+    report_snapshot: Optional[str] = None
+    recommendation_status: str
+    medicine_plan: Optional[str] = None
+    researcher_notes: Optional[str] = None
+    researcher_name: Optional[str] = None
+    template_applied: bool = False
+    shared_to_patient: bool = False
+    created_at: str
+    recommended_at: Optional[str] = None
+    shared_at: Optional[str] = None
+
+
+class ResearchReferralListResponse(BaseModel):
+    referrals: List[ResearchReferralItem]
+
+
+class ResearchReferralCreateResponse(BaseModel):
+    success: bool
+    referral: ResearchReferralItem
+    message: str
+
+
+class ResearchRecommendationResponse(BaseModel):
+    success: bool
+    referral: ResearchReferralItem
+    message: str
+
+
+class PatientMedicinePlanItem(BaseModel):
+    referral_id: int
+    anonymized_case_id: str
+    trial_id: str
+    disease: Optional[str] = None
+    status_bucket: str
+    medicine_plan: str
+    researcher_notes: Optional[str] = None
+    researcher_name: Optional[str] = None
+    doctor_email: str
+    shared_at: Optional[str] = None
+
+
+class PatientMedicinePlanListResponse(BaseModel):
+    plans: List[PatientMedicinePlanItem]
+
+
 class AppointmentOptionItem(BaseModel):
     patient_id: str
     doctor_email: str
@@ -355,6 +426,8 @@ class AppointmentItem(BaseModel):
     doctor_advice: Optional[str] = None
     status: str
     doctor_name: Optional[str] = None
+    appointment_completed_at: Optional[str] = None
+    followup_available_at: Optional[str] = None
 
 
 class AppointmentListResponse(BaseModel):
@@ -369,6 +442,79 @@ class AppointmentAdviceInput(BaseModel):
 
 class AppointmentAdviceResponse(BaseModel):
     success: bool
+
+
+class AppointmentCompleteInput(BaseModel):
+    appointment_id: int
+    doctor_email: str
+
+
+class AppointmentCompleteResponse(BaseModel):
+    success: bool
+    appointment_id: int
+    status: str
+    appointment_completed_at: str
+    followup_available_at: str
+    message: str
+
+
+class FollowUpStatusItem(BaseModel):
+    appointment_id: int
+    patient_id: str
+    doctor_email: str
+    trial_id: str
+    status: str
+    appointment_completed_at: Optional[str] = None
+    followup_available_at: Optional[str] = None
+    followup_enabled: bool
+    seconds_remaining: int = 0
+
+
+class FollowUpStatusResponse(BaseModel):
+    items: List[FollowUpStatusItem]
+    safety_notice: str
+
+
+class FollowUpRequestInput(BaseModel):
+    appointment_id: int
+    patient_email: str
+    mode: str = Field(..., pattern="^(text|video)$")
+
+
+class FollowUpRequestResponse(BaseModel):
+    success: bool
+    mode: str
+    message: str
+    video_url: Optional[str] = None
+
+
+class MessageSendInput(BaseModel):
+    appointment_id: int
+    patient_id: str
+    patient_email: str
+    doctor_email: str
+    sender_role: str = Field(..., pattern="^(patient|doctor)$")
+    message_text: str = Field(..., min_length=1, max_length=1000)
+
+
+class MessageItem(BaseModel):
+    id: int
+    appointment_id: int
+    patient_id: str
+    patient_email: str
+    doctor_email: str
+    sender_role: str
+    message_text: str
+    timestamp: str
+
+
+class MessageSendResponse(BaseModel):
+    success: bool
+    item: MessageItem
+
+
+class MessageListResponse(BaseModel):
+    messages: List[MessageItem]
 
 
 class TrialApplyInput(BaseModel):

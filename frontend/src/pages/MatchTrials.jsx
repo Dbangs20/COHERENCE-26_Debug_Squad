@@ -95,7 +95,7 @@ const MatchTrials = () => {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Clinical Trial Eligibility & Matching Engine</h1>
+        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">🧠 Clinical Trial Eligibility & Matching Engine</h1>
         <p className="mt-2 text-sm text-slate-600">
           Rule-based + ML matching for anonymized patient profiles, with explainability, confidence scores, and geographic filters.
         </p>
@@ -110,7 +110,7 @@ const MatchTrials = () => {
       />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Advanced Inputs</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">⚙️ Advanced Inputs</h2>
         <div className="mt-3 grid gap-4 md:grid-cols-2">
           <label className="text-sm">
             <span className="mb-1 block font-medium text-slate-700">Clinical Notes (semi-structured)</span>
@@ -169,7 +169,7 @@ const MatchTrials = () => {
 
       {hasSearched && !isLoading && !error && (
         <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-slate-900">Recommended Trials</h2>
+          <h2 className="text-lg font-semibold text-slate-900">🎯 Recommended Trials</h2>
           {topResults.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
               No matching trials found for the submitted profile.
@@ -182,7 +182,7 @@ const MatchTrials = () => {
 
       {parsedCriteria.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-          <h3 className="text-lg font-semibold text-slate-900">Criteria Parsing Preview</h3>
+          <h3 className="text-lg font-semibold text-slate-900">🧩 Criteria Parsing Preview</h3>
           <p className="mt-1 text-sm text-slate-600">Showing how semi-structured criteria text is converted into structured logic.</p>
           <div className="mt-4 grid gap-3">
             {parsedCriteria.map((item) => (

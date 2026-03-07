@@ -5,27 +5,36 @@ import {
   applyToTrial,
   bookAppointment,
   analyzeDoctorReport,
+  createResearchReferral,
+  completeAppointment,
   createClinicalTrial,
   createPatientCondition,
-  deleteReadNotifications,
   getDoctorAppointments,
   getDoctorClinicalTrials,
+  getDoctorFollowupRequests,
   getDoctorMatchedPatients,
   getDoctorReports,
   getFairnessSnapshot,
-  getNotifications,
   getPatientAppointmentOptions,
   getPatientAppointments,
   getPatientConditions,
+  getPatientMedicinePlans,
+  getPatientFollowupStatus,
   getPrivacyLogs,
   getPatientReportRequests,
-  markNotificationRead,
+  getDoctorResearchReferrals,
   matchTrialsByPatientId,
   parseEligibilityCriteria,
   qaEligibilityCriteria,
+  requestFollowup,
   requestPatientReport,
+  saveResearchRecommendation,
+  shareResearchPlanToPatient,
+  getMessages,
+  sendMessage,
   uploadPatientReport,
 } from "../api";
+import MatchAnalytics from "../components/MatchAnalytics";
 
 const StatusBadge = ({ status }) => {
   const styles =
@@ -39,6 +48,37 @@ const StatusBadge = ({ status }) => {
 };
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const formatSeconds = (seconds) => {
+  const safe = Math.max(0, Number(seconds || 0));
+  const h = String(Math.floor(safe / 3600)).padStart(2, "0");
+  const m = String(Math.floor((safe % 3600) / 60)).padStart(2, "0");
+  const s = String(Math.floor(safe % 60)).padStart(2, "0");
+  return `${h}:${m}:${s}`;
+};
+
+const getRemainingSecondsFromIso = (isoDate) => {
+  if (!isoDate) return 0;
+  const target = new Date(isoDate).getTime();
+  const now = Date.now();
+  const remaining = Math.floor((target - now) / 1000);
+  return remaining > 0 ? remaining : 0;
+};
+
+const toFallbackFollowupItem = (appointment) => {
+  const remaining = getRemainingSecondsFromIso(appointment.followup_available_at);
+  return {
+    appointment_id: appointment.id,
+    patient_id: appointment.patient_id,
+    doctor_email: appointment.doctor_email,
+    trial_id: appointment.trial_id,
+    status: appointment.status,
+    appointment_completed_at: appointment.appointment_completed_at,
+    followup_available_at: appointment.followup_available_at,
+    followup_enabled: remaining === 0 && Boolean(appointment.followup_available_at),
+    seconds_remaining: remaining,
+  };
+};
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -74,10 +114,17 @@ const Landing = () => {
   const [appliedTrials, setAppliedTrials] = useState({});
   const [activePatientIdForMatch, setActivePatientIdForMatch] = useState("");
 
-  const [patientNotifications, setPatientNotifications] = useState([]);
   const [patientReportRequests, setPatientReportRequests] = useState([]);
   const [patientAppointmentOptions, setPatientAppointmentOptions] = useState([]);
   const [patientAppointments, setPatientAppointments] = useState([]);
+  const [patientFollowupItems, setPatientFollowupItems] = useState([]);
+  const [followupSafetyNotice, setFollowupSafetyNotice] = useState("");
+  const [selectedPatientFollowup, setSelectedPatientFollowup] = useState(null);
+  const [patientFollowupVideoUrl, setPatientFollowupVideoUrl] = useState("");
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [loadingChat, setLoadingChat] = useState(false);
+  const [sendingChat, setSendingChat] = useState(false);
   const [showAppointmentForm, setShowAppointmentForm] = useState(false);
   const [bookingAppointment, setBookingAppointment] = useState(false);
   const [appointmentSuggestions, setAppointmentSuggestions] = useState([]);
@@ -119,8 +166,15 @@ const Landing = () => {
   const [doctorTrials, setDoctorTrials] = useState([]);
   const [doctorMatchedPatients, setDoctorMatchedPatients] = useState([]);
   const [doctorReports, setDoctorReports] = useState([]);
-  const [doctorNotifications, setDoctorNotifications] = useState([]);
+  const [doctorResearchReferrals, setDoctorResearchReferrals] = useState([]);
   const [doctorAppointments, setDoctorAppointments] = useState([]);
+  const [doctorFollowupRequests, setDoctorFollowupRequests] = useState([]);
+  const [processingCompleteAppointmentId, setProcessingCompleteAppointmentId] = useState(null);
+  const [selectedDoctorFollowup, setSelectedDoctorFollowup] = useState(null);
+  const [doctorChatMessages, setDoctorChatMessages] = useState([]);
+  const [doctorChatInput, setDoctorChatInput] = useState("");
+  const [doctorLoadingChat, setDoctorLoadingChat] = useState(false);
+  const [doctorSendingChat, setDoctorSendingChat] = useState(false);
   const [doctorAdviceByAppointmentId, setDoctorAdviceByAppointmentId] = useState({});
   const [fairnessSnapshot, setFairnessSnapshot] = useState(null);
   const [privacyLogs, setPrivacyLogs] = useState([]);
@@ -130,8 +184,13 @@ const Landing = () => {
   const [requestingReportKey, setRequestingReportKey] = useState("");
   const [requiredTestsByMatchKey, setRequiredTestsByMatchKey] = useState({});
   const [analyzingReportId, setAnalyzingReportId] = useState(null);
+  const [forwardingReportId, setForwardingReportId] = useState(null);
+  const [savingResearchReferralId, setSavingResearchReferralId] = useState(null);
+  const [sharingResearchReferralId, setSharingResearchReferralId] = useState(null);
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisStep, setAnalysisStep] = useState("");
+  const [researcherInputByReferralId, setResearcherInputByReferralId] = useState({});
+  const [patientMedicinePlans, setPatientMedicinePlans] = useState([]);
 
   const [trialFormData, setTrialFormData] = useState({
     trial_id: "",
@@ -157,6 +216,7 @@ const Landing = () => {
   });
 
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
+  const [followupClockTick, setFollowupClockTick] = useState(0);
   const [isMatchingTrials, setIsMatchingTrials] = useState(false);
   const [isSavingTrial, setIsSavingTrial] = useState(false);
   const [isLoadingDoctorMatches, setIsLoadingDoctorMatches] = useState(false);
@@ -193,16 +253,6 @@ const Landing = () => {
     }
   };
 
-  const loadPatientNotifications = async () => {
-    if (!patientSession?.email) return;
-    try {
-      const data = await getNotifications(patientSession.email, "patient");
-      setPatientNotifications(data.notifications || []);
-    } catch (error) {
-      setPatientNotifications([]);
-    }
-  };
-
   const loadPatientReportRequests = async () => {
     if (!patientSession?.email) return;
     try {
@@ -230,6 +280,19 @@ const Landing = () => {
       setPatientAppointments(data.appointments || []);
     } catch (error) {
       setPatientAppointments([]);
+    }
+  };
+
+  const loadPatientFollowupStatus = async () => {
+    if (!patientSession?.email) return;
+    try {
+      const data = await getPatientFollowupStatus(patientSession.email);
+      setPatientFollowupItems(data.items || []);
+      setFollowupSafetyNotice(data.safety_notice || "");
+    } catch (error) {
+      setPatientFollowupItems([]);
+      setFollowupSafetyNotice("");
+      setPatientError("Unable to fetch follow-up status from server. Showing local fallback when available.");
     }
   };
 
@@ -272,13 +335,13 @@ const Landing = () => {
     }
   };
 
-  const loadDoctorNotifications = async () => {
+  const loadDoctorResearchReferrals = async () => {
     if (!doctorSession?.email) return;
     try {
-      const data = await getNotifications(doctorSession.email, "doctor");
-      setDoctorNotifications(data.notifications || []);
+      const data = await getDoctorResearchReferrals(doctorSession.email);
+      setDoctorResearchReferrals(data.referrals || []);
     } catch (error) {
-      setDoctorNotifications([]);
+      setDoctorResearchReferrals([]);
     }
   };
 
@@ -289,6 +352,26 @@ const Landing = () => {
       setDoctorAppointments(data.appointments || []);
     } catch (error) {
       setDoctorAppointments([]);
+    }
+  };
+
+  const loadPatientMedicinePlans = async () => {
+    if (!patientSession?.email) return;
+    try {
+      const data = await getPatientMedicinePlans(patientSession.email);
+      setPatientMedicinePlans(data.plans || []);
+    } catch (error) {
+      setPatientMedicinePlans([]);
+    }
+  };
+
+  const loadDoctorFollowupRequests = async () => {
+    if (!doctorSession?.email) return;
+    try {
+      const data = await getDoctorFollowupRequests(doctorSession.email);
+      setDoctorFollowupRequests(data.requests || []);
+    } catch (error) {
+      setDoctorFollowupRequests([]);
     }
   };
 
@@ -328,13 +411,44 @@ const Landing = () => {
       ? "ring-2 ring-cyan-400 ring-offset-2 animate-pulse"
       : "";
 
+  const effectiveFollowupItems = useMemo(() => {
+    if (patientFollowupItems.length > 0) return patientFollowupItems;
+    return (patientAppointments || [])
+      .filter((appointment) => appointment.status === "completed" || appointment.status === "followup_requested")
+      .map((appointment) => toFallbackFollowupItem(appointment));
+  }, [patientFollowupItems, patientAppointments]);
+
+  const sectionCountdownSeconds = useMemo(() => {
+    const positive = effectiveFollowupItems
+      .map((item) => (item.followup_enabled ? 0 : getRemainingSecondsFromIso(item.followup_available_at)))
+      .filter((seconds) => seconds > 0);
+    if (positive.length > 0) return Math.min(...positive);
+    if (effectiveFollowupItems.length > 0) return 0;
+    if ((patientAppointments || []).length > 0) return 2 * 60 * 60;
+    return 0;
+  }, [effectiveFollowupItems, patientAppointments, followupClockTick]);
+
+  const matchedPatientsByTrial = useMemo(() => {
+    const grouped = {};
+    for (const trial of doctorTrials) {
+      const trialDisease = String(trial?.disease || "").trim().toLowerCase();
+      grouped[trial.trial_id] = doctorMatchedPatients.filter((item) => {
+        const itemDisease = String(item?.disease || "").trim().toLowerCase();
+        if (trialDisease && itemDisease !== trialDisease) return false;
+        return item.trial_id === trial.trial_id;
+      });
+    }
+    return grouped;
+  }, [doctorTrials, doctorMatchedPatients]);
+
   useEffect(() => {
     if (patientSession?.email) {
       loadPatientRecords();
-      loadPatientNotifications();
       loadPatientReportRequests();
       loadPatientAppointmentOptions();
       loadPatientAppointments();
+      loadPatientFollowupStatus();
+      loadPatientMedicinePlans();
     }
   }, [patientSession?.email]);
 
@@ -343,8 +457,9 @@ const Landing = () => {
       loadDoctorTrials();
       loadDoctorMatchedPatients();
       loadDoctorReports();
-      loadDoctorNotifications();
+      loadDoctorResearchReferrals();
       loadDoctorAppointments();
+      loadDoctorFollowupRequests();
       loadFairnessSnapshot();
       loadPrivacyLogs();
     }
@@ -373,6 +488,47 @@ const Landing = () => {
     };
   }, [juryWalkthroughActive, juryWalkthroughIndex]);
 
+  useEffect(() => {
+    if (!patientSession?.email) return;
+    const interval = setInterval(() => {
+      loadPatientFollowupStatus();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [patientSession?.email]);
+
+  useEffect(() => {
+    if (!patientSession?.email) return;
+    const timer = setInterval(() => {
+      setFollowupClockTick((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [patientSession?.email]);
+
+  useEffect(() => {
+    if (!doctorSession?.email) return;
+    const interval = setInterval(() => {
+      loadDoctorFollowupRequests();
+      loadDoctorAppointments();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [doctorSession?.email]);
+
+  useEffect(() => {
+    if (!selectedPatientFollowup?.appointment_id) return;
+    const interval = setInterval(() => {
+      loadPatientChat(selectedPatientFollowup.appointment_id);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [selectedPatientFollowup?.appointment_id]);
+
+  useEffect(() => {
+    if (!selectedDoctorFollowup?.appointment_id) return;
+    const interval = setInterval(() => {
+      loadDoctorChat(selectedDoctorFollowup.appointment_id);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [selectedDoctorFollowup?.appointment_id]);
+
   const handlePatientChange = (event) => {
     const { name, value, type, checked } = event.target;
     setPatientFormData((prev) => ({
@@ -391,46 +547,6 @@ const Landing = () => {
 
   const handleReportFileChange = (requestId, file) => {
     setReportFiles((prev) => ({ ...prev, [requestId]: file }));
-  };
-
-  const handleMarkNotificationRead = async (notificationId) => {
-    try {
-      await markNotificationRead(notificationId);
-      await loadPatientNotifications();
-    } catch (error) {
-      setPatientError("Unable to mark notification as read.");
-    }
-  };
-
-  const handleMarkDoctorNotificationRead = async (notificationId) => {
-    try {
-      await markNotificationRead(notificationId);
-      await loadDoctorNotifications();
-    } catch (error) {
-      setDoctorError("Unable to mark notification as read.");
-    }
-  };
-
-  const handleDeleteReadNotifications = async () => {
-    if (!patientSession?.email) return;
-    try {
-      const result = await deleteReadNotifications(patientSession.email, "patient");
-      setPatientMessage(`Deleted ${result.deleted_count} read notification(s).`);
-      await loadPatientNotifications();
-    } catch (error) {
-      setPatientError("Unable to delete read notifications.");
-    }
-  };
-
-  const handleDeleteReadDoctorNotifications = async () => {
-    if (!doctorSession?.email) return;
-    try {
-      const result = await deleteReadNotifications(doctorSession.email, "doctor");
-      setDoctorMessage(`Deleted ${result.deleted_count} read notification(s).`);
-      await loadDoctorNotifications();
-    } catch (error) {
-      setDoctorError("Unable to delete read notifications.");
-    }
   };
 
   const handleOpenAppointmentForm = () => {
@@ -489,7 +605,6 @@ const Landing = () => {
       });
       setShowAppointmentForm(false);
       await loadPatientAppointments();
-      await loadPatientNotifications();
     } catch (error) {
       setPatientError(error?.response?.data?.detail || "Unable to book appointment.");
     } finally {
@@ -518,9 +633,124 @@ const Landing = () => {
       setDoctorMessage("Special advice sent to patient successfully.");
       setDoctorAdviceByAppointmentId((prev) => ({ ...prev, [appointmentId]: "" }));
       await loadDoctorAppointments();
-      await loadDoctorNotifications();
     } catch (error) {
       setDoctorError(error?.response?.data?.detail || "Unable to send advice.");
+    }
+  };
+
+  const handleCompleteAppointment = async (appointmentId) => {
+    if (!doctorSession?.email) return;
+    setDoctorError("");
+    setDoctorMessage("");
+    setProcessingCompleteAppointmentId(appointmentId);
+    try {
+      const response = await completeAppointment({
+        appointment_id: appointmentId,
+        doctor_email: doctorSession.email,
+      });
+      setDoctorMessage(response.message || "Appointment marked completed.");
+      await loadDoctorAppointments();
+    } catch (error) {
+      setDoctorError(error?.response?.data?.detail || "Unable to complete appointment.");
+    } finally {
+      setProcessingCompleteAppointmentId(null);
+    }
+  };
+
+  const handleRequestFollowup = async (appointmentId, mode) => {
+    if (!patientSession?.email) return;
+    setPatientError("");
+    setPatientMessage("");
+    try {
+      const response = await requestFollowup({
+        appointment_id: appointmentId,
+        patient_email: patientSession.email,
+        mode,
+      });
+      setPatientMessage(response.message || "Follow-up requested.");
+      if (response.video_url) {
+        setPatientFollowupVideoUrl(response.video_url);
+      }
+      await loadPatientFollowupStatus();
+      await loadPatientAppointments();
+    } catch (error) {
+      setPatientError(error?.response?.data?.detail || "Unable to request follow-up.");
+    }
+  };
+
+  const loadPatientChat = async (appointmentId) => {
+    setLoadingChat(true);
+    try {
+      const data = await getMessages(appointmentId);
+      setChatMessages(data.messages || []);
+    } catch (error) {
+      setChatMessages([]);
+    } finally {
+      setLoadingChat(false);
+    }
+  };
+
+  const handlePatientOpenChat = async (item) => {
+    setSelectedPatientFollowup(item);
+    await loadPatientChat(item.appointment_id);
+  };
+
+  const handlePatientSendChat = async () => {
+    if (!selectedPatientFollowup || !patientSession?.email || !chatInput.trim()) return;
+    setSendingChat(true);
+    try {
+      await sendMessage({
+        appointment_id: selectedPatientFollowup.appointment_id,
+        patient_id: selectedPatientFollowup.patient_id,
+        patient_email: patientSession.email,
+        doctor_email: selectedPatientFollowup.doctor_email,
+        sender_role: "patient",
+        message_text: chatInput.trim(),
+      });
+      setChatInput("");
+      await loadPatientChat(selectedPatientFollowup.appointment_id);
+    } catch (error) {
+      setPatientError(error?.response?.data?.detail || "Unable to send message.");
+    } finally {
+      setSendingChat(false);
+    }
+  };
+
+  const loadDoctorChat = async (appointmentId) => {
+    setDoctorLoadingChat(true);
+    try {
+      const data = await getMessages(appointmentId);
+      setDoctorChatMessages(data.messages || []);
+    } catch (error) {
+      setDoctorChatMessages([]);
+    } finally {
+      setDoctorLoadingChat(false);
+    }
+  };
+
+  const handleDoctorOpenChat = async (requestItem) => {
+    setSelectedDoctorFollowup(requestItem);
+    await loadDoctorChat(requestItem.appointment_id);
+  };
+
+  const handleDoctorSendChat = async () => {
+    if (!selectedDoctorFollowup || !doctorSession?.email || !doctorChatInput.trim()) return;
+    setDoctorSendingChat(true);
+    try {
+      await sendMessage({
+        appointment_id: selectedDoctorFollowup.appointment_id,
+        patient_id: selectedDoctorFollowup.patient_id,
+        patient_email: selectedDoctorFollowup.patient_email || "",
+        doctor_email: doctorSession.email,
+        sender_role: "doctor",
+        message_text: doctorChatInput.trim(),
+      });
+      setDoctorChatInput("");
+      await loadDoctorChat(selectedDoctorFollowup.appointment_id);
+    } catch (error) {
+      setDoctorError(error?.response?.data?.detail || "Unable to send message.");
+    } finally {
+      setDoctorSendingChat(false);
     }
   };
 
@@ -719,7 +949,6 @@ const Landing = () => {
       });
       setAppliedTrials((prev) => ({ ...prev, [trialId]: response.status }));
       setPatientMessage(response.message);
-      await loadPatientNotifications();
     } catch (error) {
       setPatientError(error?.response?.data?.detail || "Unable to apply for trial.");
     }
@@ -745,7 +974,6 @@ const Landing = () => {
 
       setPatientMessage(response.message);
       await loadPatientReportRequests();
-      await loadPatientNotifications();
       setReportFiles((prev) => {
         const next = { ...prev };
         delete next[requestItem.id];
@@ -827,126 +1055,155 @@ const Landing = () => {
     }
   };
 
+  const handleForwardToResearcher = async (reportId) => {
+    if (!doctorSession?.email) return;
+    setDoctorError("");
+    setDoctorMessage("");
+    setForwardingReportId(reportId);
+    try {
+      const response = await createResearchReferral({
+        doctor_email: doctorSession.email,
+        report_id: reportId,
+      });
+      setDoctorMessage(response.message || "Report forwarded to researcher queue.");
+      await loadDoctorResearchReferrals();
+    } catch (error) {
+      setDoctorError(error?.response?.data?.detail || "Unable to forward report to researcher.");
+    } finally {
+      setForwardingReportId(null);
+    }
+  };
+
+  const handleSaveResearchRecommendation = async (referral) => {
+    if (!doctorSession?.email) return;
+    const form = researcherInputByReferralId[referral.id] || {};
+    if (!(form.researcher_name || "").trim() || !(form.medicine_plan || "").trim()) {
+      setDoctorError("Enter researcher name and medicine plan before saving.");
+      return;
+    }
+
+    setSavingResearchReferralId(referral.id);
+    setDoctorError("");
+    setDoctorMessage("");
+    try {
+      const response = await saveResearchRecommendation({
+        doctor_email: doctorSession.email,
+        referral_id: referral.id,
+        researcher_name: form.researcher_name,
+        medicine_plan: form.medicine_plan,
+        researcher_notes: form.researcher_notes || "",
+      });
+      setDoctorMessage(response.message || "Research recommendation saved.");
+      await loadDoctorResearchReferrals();
+    } catch (error) {
+      setDoctorError(error?.response?.data?.detail || "Unable to save recommendation.");
+    } finally {
+      setSavingResearchReferralId(null);
+    }
+  };
+
+  const handleShareResearchPlanToPatient = async (referralId) => {
+    if (!doctorSession?.email) return;
+    setSharingResearchReferralId(referralId);
+    setDoctorError("");
+    setDoctorMessage("");
+    try {
+      const response = await shareResearchPlanToPatient({
+        doctor_email: doctorSession.email,
+        referral_id: referralId,
+      });
+      setDoctorMessage(response.message || "Medicine plan shared with patient.");
+      await loadDoctorResearchReferrals();
+    } catch (error) {
+      setDoctorError(error?.response?.data?.detail || "Unable to share medicine plan.");
+    } finally {
+      setSharingResearchReferralId(null);
+    }
+  };
+
   if (patientSession) {
     return (
-      <div className="space-y-6 pb-8">
-        <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-teal-500 to-cyan-500 p-7 text-white shadow-soft sm:p-10">
+      <div className="space-y-4 pb-6">
+        <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-teal-500 to-cyan-500 p-6 text-white shadow-soft sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-wider text-white/90">Patient Dashboard</p>
           <h1 className="mt-2 text-3xl font-bold">Welcome, {patientSession.full_name}</h1>
           <p className="mt-2 text-sm text-white/90">Track your anonymized medical records and get matched to clinical trials.</p>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-slate-900">Notifications</h2>
-            <button type="button" className="btn-secondary" onClick={handleDeleteReadNotifications}>
-              Delete Read Notifications
-            </button>
-          </div>
-          {patientNotifications.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">No notifications yet.</p>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {patientNotifications.map((note) => (
-                <article
-                  key={note.id}
-                  className={`rounded-xl border p-3 ${
-                    note.is_read ? "border-slate-200 bg-slate-50" : "border-red-200 bg-red-50"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{note.title}</p>
-                      <p className="mt-1 text-sm text-slate-700">{note.message}</p>
-                    </div>
-                    {!note.is_read && (
-                      <div className="flex flex-col gap-2">
-                        <button
-                          type="button"
-                          className="btn-secondary whitespace-nowrap"
-                          onClick={() => handleMarkNotificationRead(note.id)}
-                        >
-                          Mark Read
-                        </button>
-                        {note.title === "Clinical Trial Selection Update" && patientAppointmentOptions.length > 0 && (
-                          <button type="button" className="btn-primary whitespace-nowrap" onClick={handleOpenAppointmentForm}>
-                            Book Appointment
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {patientRecords.length > 0 && (
+        <div className="grid gap-4 xl:grid-cols-2">
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-slate-900">Patient Medical Records ({patientRecords.length})</h2>
+              <h2 className="text-lg font-semibold text-slate-900">🧾 Patient Medical Records ({patientRecords.length})</h2>
               <button type="button" className="btn-primary" onClick={() => setShowPatientForm(true)}>
                 Fill Form Again
               </button>
             </div>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              {patientRecords.map((record) => (
-                <article key={record.patient_id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-semibold text-slate-900">{record.patient_id}</p>
-                  <p className="mt-1 text-xs text-slate-600">{record.disease} | Stage: {record.disease_stage || "N/A"}</p>
-                  <p className="mt-1 text-xs text-slate-600">Age: {record.age} | Gender: {record.gender} | City: {record.city || "N/A"}</p>
-                  <button type="button" className="btn-secondary mt-3" onClick={() => startTrialMatching(record.patient_id)}>
-                    Start Matching
-                  </button>
-                </article>
-              ))}
-            </div>
+            {patientRecords.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">No medical records yet. Fill the form to create your first patient record.</p>
+            ) : (
+              <div className="mt-4 overflow-x-auto">
+                <div className="flex min-w-max gap-4 pb-2">
+                  {patientRecords.map((record) => (
+                    <article key={record.patient_id} className="w-72 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-sm font-semibold text-slate-900">{record.patient_id}</p>
+                      <p className="mt-1 text-xs text-slate-600">{record.disease} | Stage: {record.disease_stage || "N/A"}</p>
+                      <p className="mt-1 text-xs text-slate-600">Age: {record.age} | Gender: {record.gender} | City: {record.city || "N/A"}</p>
+                      <button type="button" className="btn-secondary mt-3" onClick={() => startTrialMatching(record.patient_id)}>
+                        Start Matching
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
-        )}
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-          <h2 className="text-lg font-semibold text-slate-900">Doctor Report Requests</h2>
-          {patientReportRequests.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">No pending report requests from doctors.</p>
-          ) : (
-            <div className="mt-4 space-y-4">
-              {patientReportRequests.map((requestItem) => (
-                <article key={requestItem.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-semibold text-slate-900">Trial: {requestItem.trial_id}</p>
-                  <p className="mt-1 text-xs text-slate-600">Patient Ref: {requestItem.patient_id}</p>
-                  <p className="mt-1 text-xs text-slate-600">Status: {requestItem.status}</p>
-                  <p className="mt-1 text-xs text-slate-700">
-                    Required Tests: {requestItem.required_tests || "Not specified"}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-700">Doctor is asking for your report. Upload to continue.</p>
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft">
+            <h2 className="text-lg font-semibold text-slate-900">📨 Doctor Report Requests</h2>
+            {patientReportRequests.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">No pending report requests from doctors.</p>
+            ) : (
+              <div className="mt-4 overflow-x-auto">
+                <div className="flex min-w-max gap-4 pb-2">
+                  {patientReportRequests.map((requestItem) => (
+                    <article key={requestItem.id} className="w-80 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-sm font-semibold text-slate-900">Trial: {requestItem.trial_id}</p>
+                      <p className="mt-1 text-xs text-slate-600">Patient Ref: {requestItem.patient_id}</p>
+                      <p className="mt-1 text-xs text-slate-600">Status: {requestItem.status}</p>
+                      <p className="mt-1 text-xs text-slate-700">
+                        Required Tests: {requestItem.required_tests || "Not specified"}
+                      </p>
+                      <p className="mt-2 text-sm text-slate-700">Doctor is asking for your report. Upload to continue.</p>
 
-                  <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <input
-                      type="file"
-                      accept=".txt,.pdf,.doc,.docx"
-                      className="text-xs"
-                      onChange={(event) => handleReportFileChange(requestItem.id, event.target.files?.[0] || null)}
-                    />
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      onClick={() => handleUploadPatientReport(requestItem)}
-                      disabled={uploadingRequestId === requestItem.id}
-                    >
-                      {uploadingRequestId === requestItem.id ? "Uploading..." : "Upload Report"}
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <input
+                          type="file"
+                          accept=".txt,.pdf,.doc,.docx"
+                          className="text-xs"
+                          onChange={(event) => handleReportFileChange(requestItem.id, event.target.files?.[0] || null)}
+                        />
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => handleUploadPatientReport(requestItem)}
+                          disabled={uploadingRequestId === requestItem.id}
+                        >
+                          {uploadingRequestId === requestItem.id ? "Uploading..." : "Upload Report"}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
 
-        {patientAppointmentOptions.length > 0 ? (
-          <section ref={appointmentFormRef} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
+        <div className="grid gap-4 xl:grid-cols-2">
+        {patientAppointmentOptions.length > 0 && (
+          <section ref={appointmentFormRef} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-slate-900">Book Appointment</h2>
+              <h2 className="text-lg font-semibold text-slate-900">📅 Book Appointment</h2>
               <button type="button" className="btn-secondary" onClick={() => setShowAppointmentForm((prev) => !prev)}>
                 {showAppointmentForm ? "Hide Form" : "Open Form"}
               </button>
@@ -1011,27 +1268,17 @@ const Landing = () => {
               </form>
             )}
           </section>
-        ) : (
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-            <h2 className="text-lg font-semibold text-slate-900">Book Appointment</h2>
-            <p className="mt-2 text-sm text-slate-600">
-              Appointment booking unlocks after doctor confirms selection with:
-              {" "}
-              <span className="font-medium text-slate-900">
-                Report validated and analyzed. Candidate is selected for the clinical trial.
-              </span>
-            </p>
-          </section>
         )}
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-          <h2 className="text-lg font-semibold text-slate-900">Your Appointments</h2>
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft">
+          <h2 className="text-lg font-semibold text-slate-900">🗓️ Your Appointments</h2>
           {patientAppointments.length === 0 ? (
             <p className="mt-3 text-sm text-slate-500">No appointments scheduled yet.</p>
           ) : (
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 overflow-x-auto">
+              <div className="flex min-w-max gap-3 pb-2">
               {patientAppointments.map((appointment) => (
-                <article key={appointment.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <article key={appointment.id} className="w-80 rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-semibold text-slate-900">Trial: {appointment.trial_id}</p>
                   <p className="mt-1 text-xs text-slate-600">Doctor: {appointment.doctor_name || appointment.doctor_email}</p>
                   <p className="mt-1 text-xs text-slate-600">
@@ -1045,20 +1292,192 @@ const Landing = () => {
                   )}
                 </article>
               ))}
+              </div>
+            </div>
+          )}
+        </section>
+        </div>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft">
+          <h2 className="text-lg font-semibold text-slate-900">💬 Post Appointment Follow-Up</h2>
+          <p className="mt-2 text-sm text-slate-600">Follow-up is available 2 hours after doctor completes consultation.</p>
+          {followupSafetyNotice && (
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {followupSafetyNotice}
+            </p>
+          )}
+
+          {effectiveFollowupItems.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">No completed appointments available for follow-up yet.</p>
+          ) : (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {effectiveFollowupItems.map((item) => {
+                const remaining = item.followup_enabled ? 0 : getRemainingSecondsFromIso(item.followup_available_at);
+                return (
+                  <article key={`followup-${item.appointment_id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-sm font-semibold text-slate-900">Appointment #{item.appointment_id} | Trial {item.trial_id}</p>
+                    {!item.followup_enabled ? (
+                      <p className="mt-2 text-sm text-slate-700">Follow-up available in: {formatSeconds(remaining)}</p>
+                    ) : (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button type="button" className="btn-secondary" onClick={() => handlePatientOpenChat(item)}>
+                          Text Message Doctor
+                        </button>
+                        <button type="button" className="btn-primary" onClick={() => handleRequestFollowup(item.appointment_id, "video")}>
+                          Start Video Call
+                        </button>
+                        <button type="button" className="btn-secondary" onClick={() => handleRequestFollowup(item.appointment_id, "text")}>
+                          Request Text Follow-Up
+                        </button>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+
+          {patientFollowupVideoUrl && (
+            <div className="mt-4 rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800">
+              Video room ready:{" "}
+              <a href={patientFollowupVideoUrl} target="_blank" rel="noreferrer" className="font-semibold underline">
+                Join Video Call
+              </a>
+            </div>
+          )}
+
+          {selectedPatientFollowup && (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-900">Chat for Appointment #{selectedPatientFollowup.appointment_id}</p>
+                <button type="button" className="btn-secondary" onClick={() => setSelectedPatientFollowup(null)}>
+                  Close Chat
+                </button>
+              </div>
+              <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
+                {loadingChat ? (
+                  <p className="text-xs text-slate-500">Loading chat...</p>
+                ) : chatMessages.length === 0 ? (
+                  <p className="text-xs text-slate-500">No messages yet.</p>
+                ) : (
+                  chatMessages.map((msg) => (
+                    <div key={`pm-${msg.id}`} className={`rounded-md px-2 py-1 text-xs ${msg.sender_role === "patient" ? "bg-cyan-100 text-cyan-900" : "bg-slate-200 text-slate-800"}`}>
+                      <p className="font-semibold">{msg.sender_role === "patient" ? "You" : "Doctor"}</p>
+                      <p>{msg.message_text}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <input
+                  className="input-base"
+                  placeholder="Type your message..."
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                />
+                <button type="button" className="btn-primary" disabled={sendingChat} onClick={handlePatientSendChat}>
+                  {sendingChat ? "Sending..." : "Send"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <p className="mt-4 text-sm text-slate-700">
+            Follow-up available in:{" "}
+            <span className="font-bold text-slate-900">{formatSeconds(sectionCountdownSeconds)}</span>
+          </p>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft">
+          <h2 className="text-lg font-semibold text-slate-900">💊 Personalized Medicine Plans (Doctor Shared)</h2>
+          <p className="mt-2 text-xs text-slate-600">
+            Researcher recommendations are anonymized and always routed through your doctor.
+          </p>
+          {patientMedicinePlans.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">No personalized medicine plans shared yet.</p>
+          ) : (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {patientMedicinePlans.map((plan) => (
+                <article key={`plan-${plan.referral_id}`} className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="text-sm font-semibold text-emerald-900">Case: {plan.anonymized_case_id}</p>
+                  <p className="mt-1 text-xs text-emerald-800">Trial: {plan.trial_id} | Status: {plan.status_bucket}</p>
+                  <p className="mt-2 text-sm text-emerald-900">{plan.medicine_plan}</p>
+                  {plan.researcher_notes && <p className="mt-2 text-xs text-emerald-800">Notes: {plan.researcher_notes}</p>}
+                  <p className="mt-2 text-xs text-emerald-700">Shared by Doctor: {plan.doctor_email}</p>
+                </article>
+              ))}
             </div>
           )}
         </section>
 
         {(showPatientForm || patientRecords.length === 0) && (
           <form onSubmit={submitPatientForm} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-            <h2 className="text-lg font-semibold text-slate-900">Anonymized Patient Condition Form</h2>
+            <h2 className="text-lg font-semibold text-slate-900">🧬 Anonymized Patient Condition Form</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Age *</span><input className="input-base" type="number" min="0" max="130" name="age" value={patientFormData.age} onChange={handlePatientChange} required /></label>
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Gender *</span><input className="input-base" name="gender" value={patientFormData.gender} onChange={handlePatientChange} required /></label>
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Disease *</span><input className="input-base" name="disease" value={patientFormData.disease} onChange={handlePatientChange} required /></label>
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Disease Stage</span><input className="input-base" name="disease_stage" value={patientFormData.disease_stage} onChange={handlePatientChange} /></label>
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Biomarker</span><input className="input-base" name="biomarker" value={patientFormData.biomarker} onChange={handlePatientChange} /></label>
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">City</span><input className="input-base" name="city" value={patientFormData.city} onChange={handlePatientChange} /></label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Age *</span>
+                <select className="input-base" name="age" value={patientFormData.age} onChange={handlePatientChange} required>
+                  <option value="">Select age</option>
+                  {Array.from({ length: 100 }, (_, index) => index + 1).map((age) => (
+                    <option key={`age-${age}`} value={age}>
+                      {age}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Gender *</span>
+                <select className="input-base" name="gender" value={patientFormData.gender} onChange={handlePatientChange} required>
+                  <option value="">Select gender</option>
+                  <option value="Female">Female</option>
+                  <option value="Male">Male</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Disease *</span>
+                <select className="input-base" name="disease" value={patientFormData.disease} onChange={handlePatientChange} required>
+                  <option value="">Select disease</option>
+                  <option value="lung cancer">Lung Cancer</option>
+                  <option value="breast cancer">Breast Cancer</option>
+                  <option value="ovarian cancer">Ovarian Cancer</option>
+                  <option value="leukemia">Leukemia</option>
+                  <option value="lymphoma">Lymphoma</option>
+                  <option value="colorectal cancer">Colorectal Cancer</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Disease Stage</span>
+                <select className="input-base" name="disease_stage" value={patientFormData.disease_stage} onChange={handlePatientChange}>
+                  <option value="">Select stage</option>
+                  <option value="I">I</option>
+                  <option value="II">II</option>
+                  <option value="III">III</option>
+                  <option value="IV">IV</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Biomarker</span>
+                <select className="input-base" name="biomarker" value={patientFormData.biomarker} onChange={handlePatientChange}>
+                  <option value="">Select biomarker</option>
+                  <option value="EGFR+">EGFR+</option>
+                  <option value="HER2+">HER2+</option>
+                  <option value="PD-L1+">PD-L1+</option>
+                  <option value="KRAS+">KRAS+</option>
+                  <option value="BRAF+">BRAF+</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">City</span>
+                <select className="input-base" name="city" value={patientFormData.city} onChange={handlePatientChange}>
+                  <option value="">Select city</option>
+                  <option value="Mumbai">Mumbai</option>
+                  <option value="Pune">Pune</option>
+                  <option value="Delhi">Delhi</option>
+                  <option value="Bangalore">Bangalore</option>
+                  <option value="Hyderabad">Hyderabad</option>
+                </select>
+              </label>
 
               <label className="text-sm flex items-center gap-2"><input type="checkbox" name="diabetes" checked={patientFormData.diabetes} onChange={handlePatientChange} /><span>Diabetes</span></label>
               <label className="text-sm flex items-center gap-2"><input type="checkbox" name="hypertension" checked={patientFormData.hypertension} onChange={handlePatientChange} /><span>Hypertension</span></label>
@@ -1066,8 +1485,44 @@ const Landing = () => {
               <label className="text-sm flex items-center gap-2"><input type="checkbox" name="kidney_disease" checked={patientFormData.kidney_disease} onChange={handlePatientChange} /><span>Kidney Disease</span></label>
 
               <label className="text-sm sm:col-span-2"><span className="mb-1 block font-medium text-slate-700">Current Medications</span><input className="input-base" name="current_medications" value={patientFormData.current_medications} onChange={handlePatientChange} /></label>
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Smoking Status</span><input className="input-base" name="smoking_status" value={patientFormData.smoking_status} onChange={handlePatientChange} /></label>
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Pregnancy Status</span><input className="input-base" name="pregnancy_status" value={patientFormData.pregnancy_status} onChange={handlePatientChange} /></label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Smoking Status</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className={patientFormData.smoking_status === "Yes" ? "btn-primary flex-1 py-2" : "btn-secondary flex-1 py-2"}
+                    onClick={() => setPatientFormData((prev) => ({ ...prev, smoking_status: "Yes" }))}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    className={patientFormData.smoking_status === "No" ? "btn-primary flex-1 py-2" : "btn-secondary flex-1 py-2"}
+                    onClick={() => setPatientFormData((prev) => ({ ...prev, smoking_status: "No" }))}
+                  >
+                    No
+                  </button>
+                </div>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-700">Pregnancy Status</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className={patientFormData.pregnancy_status === "Yes" ? "btn-primary flex-1 py-2" : "btn-secondary flex-1 py-2"}
+                    onClick={() => setPatientFormData((prev) => ({ ...prev, pregnancy_status: "Yes" }))}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    className={patientFormData.pregnancy_status === "No" ? "btn-primary flex-1 py-2" : "btn-secondary flex-1 py-2"}
+                    onClick={() => setPatientFormData((prev) => ({ ...prev, pregnancy_status: "No" }))}
+                  >
+                    No
+                  </button>
+                </div>
+              </label>
               <label className="text-sm sm:col-span-2"><span className="mb-1 block font-medium text-slate-700">Lab Results</span><textarea className="input-base min-h-24 resize-y" name="lab_results" value={patientFormData.lab_results} onChange={handlePatientChange} /></label>
             </div>
 
@@ -1079,7 +1534,7 @@ const Landing = () => {
         )}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-          <h2 className="text-lg font-semibold text-slate-900">Recommended Clinical Trials</h2>
+          <h2 className="text-lg font-semibold text-slate-900">🎯 Recommended Clinical Trials</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
             <input className="input-base" placeholder="Filter by city" value={trialFilters.city} onChange={(e) => setTrialFilters((p) => ({ ...p, city: e.target.value }))} />
             <input className="input-base" placeholder="Filter by disease" value={trialFilters.disease} onChange={(e) => setTrialFilters((p) => ({ ...p, disease: e.target.value }))} />
@@ -1171,6 +1626,8 @@ const Landing = () => {
             </div>
           )}
         </section>
+
+        <MatchAnalytics matchResults={recommendedTrials} />
       </div>
     );
   }
@@ -1186,46 +1643,7 @@ const Landing = () => {
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-slate-900">Notifications</h2>
-            <button type="button" className="btn-secondary" onClick={handleDeleteReadDoctorNotifications}>
-              Delete Read Notifications
-            </button>
-          </div>
-          {doctorNotifications.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">No notifications yet.</p>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {doctorNotifications.map((note) => (
-                <article
-                  key={note.id}
-                  className={`rounded-xl border p-3 ${
-                    note.is_read ? "border-slate-200 bg-slate-50" : "border-red-200 bg-red-50"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{note.title}</p>
-                      <p className="mt-1 text-sm text-slate-700">{note.message}</p>
-                    </div>
-                    {!note.is_read && (
-                      <button
-                        type="button"
-                        className="btn-secondary whitespace-nowrap"
-                        onClick={() => handleMarkDoctorNotificationRead(note.id)}
-                      >
-                        Mark Read
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-slate-900">Jury Walkthrough</h2>
+            <h2 className="text-lg font-semibold text-slate-900">🎬 Jury Walkthrough</h2>
             {!juryWalkthroughActive ? (
               <button type="button" className="btn-primary" onClick={startJuryWalkthrough}>
                 Jury Walkthrough Mode
@@ -1251,7 +1669,7 @@ const Landing = () => {
           }}
           className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-soft ${getSectionClass("fairness")}`}
         >
-          <h2 className="text-lg font-semibold text-slate-900">Fairness & Bias Snapshot</h2>
+          <h2 className="text-lg font-semibold text-slate-900">⚖️ Fairness & Bias Snapshot</h2>
           {fairnessSnapshot ? (
             <>
               <p className="mt-2 text-sm text-slate-700">Overall Match Rate: {(fairnessSnapshot.overall_match_rate * 100).toFixed(0)}%</p>
@@ -1304,7 +1722,7 @@ const Landing = () => {
           onSubmit={submitTrialForm}
           className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-soft ${getSectionClass("clinical_trial_form")}`}
         >
-          <h2 className="text-lg font-semibold text-slate-900">Clinical Trial Registration</h2>
+          <h2 className="text-lg font-semibold text-slate-900">🧪 Clinical Trial Registration</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Trial ID *</span><input className="input-base" name="trial_id" value={trialFormData.trial_id} onChange={handleTrialFormChange} required /></label>
             <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Trial Title *</span><input className="input-base" name="trial_title" value={trialFormData.trial_title || trialFormData.title} onChange={handleTrialFormChange} required /></label>
@@ -1390,7 +1808,7 @@ const Landing = () => {
         </form>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-          <h2 className="text-lg font-semibold text-slate-900">Your Registered Clinical Trials</h2>
+          <h2 className="text-lg font-semibold text-slate-900">📚 Your Registered Clinical Trials</h2>
           {doctorTrials.length === 0 ? (
             <p className="mt-3 text-sm text-slate-500">No clinical trials registered yet.</p>
           ) : (
@@ -1399,7 +1817,34 @@ const Landing = () => {
                 <article key={trial.trial_id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <p className="font-semibold text-slate-900">{trial.title}</p>
                   <p className="mt-1 text-sm text-slate-600">{trial.trial_id} | {trial.phase}</p>
+                  <p className="text-sm text-slate-600">Disease: {trial.disease || "N/A"}</p>
                   <p className="text-sm text-slate-600">{trial.hospital} | {trial.city}</p>
+                  <div className="mt-3 border-t border-slate-200 pt-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Eligible Patients ({(matchedPatientsByTrial[trial.trial_id] || []).length})
+                    </p>
+                    {(matchedPatientsByTrial[trial.trial_id] || []).length === 0 ? (
+                      <p className="mt-1 text-xs text-slate-500">
+                        No patients found for {trial.disease || "this disease"} yet.
+                      </p>
+                    ) : (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(matchedPatientsByTrial[trial.trial_id] || []).slice(0, 8).map((item) => (
+                          <span
+                            key={`${trial.trial_id}-${item.patient_id}`}
+                            className="rounded-full border border-cyan-200 bg-cyan-50 px-2 py-1 text-xs font-medium text-cyan-700"
+                          >
+                            {item.patient_id}
+                          </span>
+                        ))}
+                        {(matchedPatientsByTrial[trial.trial_id] || []).length > 8 && (
+                          <span className="rounded-full border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600">
+                            +{(matchedPatientsByTrial[trial.trial_id] || []).length - 8} more
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </article>
               ))}
             </div>
@@ -1412,7 +1857,7 @@ const Landing = () => {
           }}
           className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-soft ${getSectionClass("matched_patients")}`}
         >
-          <h2 className="text-lg font-semibold text-slate-900">Top Matching Patients</h2>
+          <h2 className="text-lg font-semibold text-slate-900">🧑‍🤝‍🧑 Top Matching Patients</h2>
           {isLoadingDoctorMatches ? (
             <p className="mt-3 text-sm text-slate-600">Loading matched patients...</p>
           ) : doctorMatchedPatients.length === 0 ? (
@@ -1467,7 +1912,7 @@ const Landing = () => {
           }}
           className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-soft ${getSectionClass("appointments")}`}
         >
-          <h2 className="text-lg font-semibold text-slate-900">Booked Appointments</h2>
+          <h2 className="text-lg font-semibold text-slate-900">📅 Booked Appointments</h2>
           {doctorAppointments.length === 0 ? (
             <p className="mt-3 text-sm text-slate-500">No appointments booked yet.</p>
           ) : (
@@ -1480,6 +1925,9 @@ const Landing = () => {
                     Schedule: {appointment.appointment_date} at {appointment.appointment_time}
                   </p>
                   <p className="mt-1 text-xs text-slate-600">Status: {appointment.status}</p>
+                  {appointment.followup_available_at && (
+                    <p className="mt-1 text-xs text-slate-600">Follow-up unlocks at: {appointment.followup_available_at}</p>
+                  )}
                   <label className="mt-3 block text-xs text-slate-700">
                     Special Advice
                     <textarea
@@ -1492,11 +1940,86 @@ const Landing = () => {
                   <button type="button" className="btn-primary mt-3" onClick={() => handleDoctorAdviceSubmit(appointment.id)}>
                     Send Advice
                   </button>
+                  <button
+                    type="button"
+                    className="btn-secondary mt-2"
+                    disabled={appointment.status === "completed" || processingCompleteAppointmentId === appointment.id}
+                    onClick={() => handleCompleteAppointment(appointment.id)}
+                  >
+                    {processingCompleteAppointmentId === appointment.id
+                      ? "Completing..."
+                      : appointment.status === "completed"
+                        ? "Appointment Completed"
+                        : "Complete Appointment"}
+                  </button>
                   {appointment.doctor_advice && (
                     <p className="mt-2 text-xs text-cyan-800">Latest Advice: {appointment.doctor_advice}</p>
                   )}
                 </article>
               ))}
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
+          <h2 className="text-lg font-semibold text-slate-900">🔔 New Follow-Up Requests</h2>
+          {doctorFollowupRequests.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">No follow-up requests yet.</p>
+          ) : (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {doctorFollowupRequests.map((item) => (
+                <article key={`fup-${item.id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-900">Patient: {item.patient_id}</p>
+                  <p className="mt-1 text-xs text-slate-600">Follow-up requested after consultation</p>
+                  <p className="mt-1 text-xs text-slate-600">Mode: {item.mode}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" className="btn-secondary" onClick={() => handleDoctorOpenChat(item)}>
+                      Open Chat
+                    </button>
+                    {item.video_url && (
+                      <a className="btn-primary" href={item.video_url} target="_blank" rel="noreferrer">
+                        Join Video Call
+                      </a>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+
+          {selectedDoctorFollowup && (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-900">Chat for Appointment #{selectedDoctorFollowup.appointment_id}</p>
+                <button type="button" className="btn-secondary" onClick={() => setSelectedDoctorFollowup(null)}>
+                  Close Chat
+                </button>
+              </div>
+              <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
+                {doctorLoadingChat ? (
+                  <p className="text-xs text-slate-500">Loading chat...</p>
+                ) : doctorChatMessages.length === 0 ? (
+                  <p className="text-xs text-slate-500">No messages yet.</p>
+                ) : (
+                  doctorChatMessages.map((msg) => (
+                    <div key={`dm-${msg.id}`} className={`rounded-md px-2 py-1 text-xs ${msg.sender_role === "doctor" ? "bg-cyan-100 text-cyan-900" : "bg-slate-200 text-slate-800"}`}>
+                      <p className="font-semibold">{msg.sender_role === "doctor" ? "You" : "Patient"}</p>
+                      <p>{msg.message_text}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <input
+                  className="input-base"
+                  placeholder="Type your message..."
+                  value={doctorChatInput}
+                  onChange={(event) => setDoctorChatInput(event.target.value)}
+                />
+                <button type="button" className="btn-primary" disabled={doctorSendingChat} onClick={handleDoctorSendChat}>
+                  {doctorSendingChat ? "Sending..." : "Send"}
+                </button>
+              </div>
             </div>
           )}
         </section>
@@ -1507,7 +2030,7 @@ const Landing = () => {
           }}
           className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-soft ${getSectionClass("privacy_logs")}`}
         >
-          <h2 className="text-lg font-semibold text-slate-900">Privacy Guard Logs</h2>
+          <h2 className="text-lg font-semibold text-slate-900">🔒 Privacy Guard Logs</h2>
           {privacyLogs.length === 0 ? (
             <p className="mt-3 text-sm text-slate-500">No redaction logs yet.</p>
           ) : (
@@ -1528,7 +2051,7 @@ const Landing = () => {
           }}
           className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-soft ${getSectionClass("reports")}`}
         >
-          <h2 className="text-lg font-semibold text-slate-900">Verified Anonymized Patient Reports</h2>
+          <h2 className="text-lg font-semibold text-slate-900">📄 Verified Anonymized Patient Reports</h2>
           {isLoadingDoctorReports ? (
             <p className="mt-3 text-sm text-slate-600">Loading verified reports...</p>
           ) : doctorReports.length === 0 ? (
@@ -1568,12 +2091,113 @@ const Landing = () => {
                     >
                       {report.selected ? "Selected" : analyzingReportId === report.report_id ? "Analyzing..." : "Analyze Report"}
                     </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => handleForwardToResearcher(report.report_id)}
+                      disabled={forwardingReportId === report.report_id || report.analysis_status !== "completed"}
+                    >
+                      {forwardingReportId === report.report_id ? "Forwarding..." : "Send To Researcher"}
+                    </button>
                     {report.selected && <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">Patient Selected</span>}
                   </div>
 
                   {report.analysis_notes && <p className="mt-2 text-xs text-slate-600">{report.analysis_notes}</p>}
                 </article>
               ))}
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
+          <h2 className="text-lg font-semibold text-slate-900">🧪 Researcher Relay (Doctor as Middleman)</h2>
+          <p className="mt-1 text-xs text-slate-600">
+            Researcher receives only anonymized case data. No direct patient-researcher channel exists.
+          </p>
+          {doctorResearchReferrals.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">No referrals sent yet. Analyze a report and click "Send To Researcher".</p>
+          ) : (
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              {doctorResearchReferrals.map((referral) => {
+                const form = researcherInputByReferralId[referral.id] || {};
+                const canShare = referral.recommendation_status === "recommended" && !referral.shared_to_patient;
+                return (
+                  <article key={referral.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-900">{referral.anonymized_case_id}</p>
+                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${referral.recommendation_status === "recommended" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                        {referral.recommendation_status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">Trial: {referral.trial_id} | Disease: {referral.disease || "N/A"}</p>
+                    <p className="text-xs text-slate-600">Status bucket: {referral.status_bucket}</p>
+                    {referral.template_applied && (
+                      <p className="mt-1 text-xs font-semibold text-cyan-700">Template auto-applied for this disease/status.</p>
+                    )}
+                    <p className="mt-2 text-xs text-slate-700">{referral.report_snapshot || "No snapshot available."}</p>
+
+                    <div className="mt-3 space-y-2">
+                      <input
+                        className="input-base"
+                        placeholder="Researcher name"
+                        value={form.researcher_name ?? referral.researcher_name ?? ""}
+                        onChange={(event) =>
+                          setResearcherInputByReferralId((prev) => ({
+                            ...prev,
+                            [referral.id]: { ...prev[referral.id], researcher_name: event.target.value },
+                          }))
+                        }
+                      />
+                      <textarea
+                        className="input-base min-h-24 resize-y"
+                        placeholder="Recommended medicine plan (anonymized, status-based)."
+                        value={form.medicine_plan ?? referral.medicine_plan ?? ""}
+                        onChange={(event) =>
+                          setResearcherInputByReferralId((prev) => ({
+                            ...prev,
+                            [referral.id]: { ...prev[referral.id], medicine_plan: event.target.value },
+                          }))
+                        }
+                      />
+                      <textarea
+                        className="input-base min-h-20 resize-y"
+                        placeholder="Research notes (optional)"
+                        value={form.researcher_notes ?? referral.researcher_notes ?? ""}
+                        onChange={(event) =>
+                          setResearcherInputByReferralId((prev) => ({
+                            ...prev,
+                            [referral.id]: { ...prev[referral.id], researcher_notes: event.target.value },
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={savingResearchReferralId === referral.id}
+                        onClick={() => handleSaveResearchRecommendation(referral)}
+                      >
+                        {savingResearchReferralId === referral.id ? "Saving..." : "Save Research Recommendation"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={!canShare || sharingResearchReferralId === referral.id}
+                        onClick={() => handleShareResearchPlanToPatient(referral.id)}
+                      >
+                        {sharingResearchReferralId === referral.id ? "Sharing..." : "Share To Patient"}
+                      </button>
+                      {referral.shared_to_patient && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
+                          Shared with patient
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
