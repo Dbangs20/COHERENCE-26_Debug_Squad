@@ -297,6 +297,16 @@ class NotificationDeleteReadResponse(BaseModel):
     deleted_count: int
 
 
+class NotificationDeleteOneInput(BaseModel):
+    notification_id: int
+    email: str
+    role: str
+
+
+class NotificationDeleteOneResponse(BaseModel):
+    success: bool
+
+
 class PatientReportUploadResponse(BaseModel):
     report_id: int
     is_verified: bool

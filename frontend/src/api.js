@@ -144,6 +144,15 @@ export const deleteReadNotifications = async (email, role) => {
   return response.data;
 };
 
+export const deleteNotification = async (notificationId, email, role) => {
+  const response = await axios.post(`${API_BASE_URL}/notifications/delete_one`, {
+    notification_id: notificationId,
+    email,
+    role,
+  });
+  return response.data;
+};
+
 export const getPatientAppointmentOptions = async (email) => {
   const response = await axios.get(`${API_BASE_URL}/patient/appointment_options`, { params: { email } });
   return response.data;

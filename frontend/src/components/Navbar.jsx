@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { getNotifications, markNotificationRead } from "../api";
+import { deleteNotification, deleteReadNotifications, getNotifications, markNotificationRead } from "../api";
 import logo from "../assets/curenova-logo.svg";
 
 const Navbar = () => {
@@ -69,6 +69,14 @@ const Navbar = () => {
   }, [pathname, patientSession, doctorSession]);
 
   useEffect(() => {
+    if (!role || !email) return;
+    const timer = setInterval(() => {
+      loadNotifications();
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [role, email]);
+
+  useEffect(() => {
     const handleOutsideClick = (event) => {
       if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
         setNotificationsOpen(false);
@@ -126,7 +134,13 @@ const Navbar = () => {
             <div className="relative" ref={notificationsRef}>
               <button
                 type="button"
-                onClick={() => setNotificationsOpen((prev) => !prev)}
+                onClick={async () => {
+                  const next = !notificationsOpen;
+                  setNotificationsOpen(next);
+                  if (next) {
+                    await loadNotifications();
+                  }
+                }}
                 className="relative rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:text-slate-900"
                 title="Notifications"
               >
@@ -138,9 +152,22 @@ const Navbar = () => {
                 <div className="absolute right-0 z-30 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-3 shadow-soft">
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-semibold text-slate-900">Notification Center</p>
-                    <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={loadNotifications}>
-                      Refresh
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={loadNotifications}>
+                        Refresh
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-slate-600 hover:underline"
+                        onClick={async () => {
+                          if (!role || !email) return;
+                          await deleteReadNotifications(email, role);
+                          await loadNotifications();
+                        }}
+                      >
+                        Delete Read
+                      </button>
+                    </div>
                   </div>
                   {isLoadingNotifications ? (
                     <p className="text-xs text-slate-600">Loading notifications...</p>
@@ -167,6 +194,19 @@ const Navbar = () => {
                               }}
                             >
                               Mark Read
+                            </button>
+                          )}
+                          {note.is_read && (
+                            <button
+                              type="button"
+                              className="mt-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+                              onClick={async () => {
+                                if (!role || !email) return;
+                                await deleteNotification(note.id, email, role);
+                                await loadNotifications();
+                              }}
+                            >
+                              Delete
                             </button>
                           )}
                         </article>

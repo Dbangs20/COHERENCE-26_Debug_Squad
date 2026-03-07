@@ -525,6 +525,19 @@ def create_report_request(payload: Dict) -> sqlite3.Row:
     return row
 
 
+def has_active_report_request(patient_id: str, trial_id: str) -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM report_requests
+            WHERE patient_id = ? AND trial_id = ? AND status IN ('requested', 'submitted')
+            """,
+            (patient_id.strip(), trial_id.strip()),
+        ).fetchone()
+    return bool(int(row["count"] if row else 0))
+
+
 def get_report_request(request_id: int) -> Optional[sqlite3.Row]:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM report_requests WHERE id = ?", (request_id,)).fetchone()
@@ -662,6 +675,28 @@ def delete_read_notifications(email: str, role: str) -> int:
             """,
             (email.lower().strip(), role.strip()),
         )
+        conn.commit()
+        return int(cursor.rowcount or 0)
+
+
+def delete_notification_by_id(notification_id: int, email: str, role: str, read_only: bool = True) -> int:
+    with get_connection() as conn:
+        if read_only:
+            cursor = conn.execute(
+                """
+                DELETE FROM notifications
+                WHERE id = ? AND recipient_email = ? AND recipient_role = ? AND is_read = 1
+                """,
+                (notification_id, email.lower().strip(), role.strip()),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                DELETE FROM notifications
+                WHERE id = ? AND recipient_email = ? AND recipient_role = ?
+                """,
+                (notification_id, email.lower().strip(), role.strip()),
+            )
         conn.commit()
         return int(cursor.rowcount or 0)
 

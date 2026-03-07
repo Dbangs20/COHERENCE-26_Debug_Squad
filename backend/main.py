@@ -24,6 +24,7 @@ from auth_db import (
     create_or_get_research_referral,
     deactivate_doctor_slot,
     delete_read_notifications,
+    delete_notification_by_id,
     find_doctor_by_email,
     find_patient_by_email,
     get_appointment,
@@ -34,6 +35,7 @@ from auth_db import (
     get_status_medicine_template,
     get_trial_by_id,
     init_db,
+    has_active_report_request,
     list_all_patient_conditions,
     list_appointments_for_doctor,
     list_appointments_for_patient,
@@ -101,6 +103,8 @@ from models import (
     NotificationListResponse,
     NotificationDeleteReadInput,
     NotificationDeleteReadResponse,
+    NotificationDeleteOneInput,
+    NotificationDeleteOneResponse,
     NotificationReadInput,
     NotificationReadResponse,
     ParseCriteriaInput,
@@ -701,6 +705,11 @@ def doctor_request_report(payload: ReportRequestCreateInput):
     patient = get_patient_condition(payload.patient_id)
     if not patient:
         raise HTTPException(status_code=404, detail="Patient condition not found.")
+    if has_active_report_request(payload.patient_id, payload.trial_id):
+        raise HTTPException(
+            status_code=409,
+            detail="An active report request already exists for this patient and trial. Avoid duplicate doctor approaches.",
+        )
 
     request_row = create_report_request(payload.model_dump())
     tests_msg = f" Required tests: {payload.required_tests}." if payload.required_tests else ""
@@ -990,6 +999,14 @@ def notifications_mark_read(payload: NotificationReadInput):
 def notifications_delete_read(payload: NotificationDeleteReadInput):
     deleted_count = delete_read_notifications(payload.email, payload.role)
     return {"success": True, "deleted_count": deleted_count}
+
+
+@app.post("/notifications/delete_one", response_model=NotificationDeleteOneResponse)
+def notifications_delete_one(payload: NotificationDeleteOneInput):
+    deleted = delete_notification_by_id(payload.notification_id, payload.email, payload.role, read_only=True)
+    if deleted == 0:
+        raise HTTPException(status_code=400, detail="Only read notifications can be deleted by this user.")
+    return {"success": True}
 
 
 @app.get("/patient/appointment_options", response_model=AppointmentOptionsResponse)
